@@ -454,7 +454,7 @@ async function startBot() {
         const quotedMsg = quotedContext?.quotedMessage;
         const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || "";
         
-        const isFitGirlReply = quotedText.includes('𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝚂𝙴𝙰𝚁𝙲𝙷') && /^[1-5]$/.test(text.trim());
+        const isFitGirlReply = quotedText.includes('𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂') && /^[1-5]$/.test(text.trim());
 
         if (!text.startsWith('.') && !isFitGirlReply) return; 
 
@@ -467,7 +467,7 @@ async function startBot() {
 
         if (!allowedNumbers.includes(senderNumber)) {
             const privateMessage = 
-                `🔒 *𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+                `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                 `❌ *Sorry, Access Denied!*\n` +
                 `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
                 `_This bot is restricted to authorized users only._\n\n` +
@@ -686,7 +686,7 @@ async function startBot() {
                 return await sock.sendMessage(chatJid, { text: `❌ *'${query}'* වෙනුවෙන් කිසිදු ගේම් එකක් සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිව ටයිප් කරන්න.`, edit: searchNotify.key });
             }
 
-            let replyText = `*🎮 𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
+            let replyText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
                             `🔍 Search Result For: *${query}*\n\n`;
 
             results.forEach((game, index) => {
@@ -695,7 +695,7 @@ async function startBot() {
             });
 
             replyText += `💡 _මෙහි ඇති මැසේජ් එකට අදාළ අංකයෙන් (1-5) Reply කර සෘජුවම FuckingFast ලින්ක්ස් ලබා ගන්න._\n\n` +
-                        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                         `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
             await sock.sendMessage(chatJid, { text: replyText, edit: searchNotify.key });
         }
@@ -703,7 +703,7 @@ async function startBot() {
         // 8️⃣ .menu Command 
         else if (text.trim() === '.menu') {
             const menuText = 
-                `*👑𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                `*👑 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃 👑*\n\n` +
                 `╔════════════════════╗\n` +
                 `┃    🤖 *MAIN COMMANDS MENU* \n` +
                 `╚════════════════════╝\n` +
@@ -727,25 +727,8 @@ async function startBot() {
                 `┃\n` +
                 `┃ 📜 *.menu*\n` +
                 `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
-                `╚════════════════════╝\n\n` +
-                `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
-                
+                `╚═══════`;
             await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
-        }
-    });
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 405) {
-                if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true });
-                process.exit(1); 
-            } else {
-                setTimeout(() => startBot(), 5000); 
-            }
-        } else if (connection === 'open') {
-            console.log('🎉 RV Games Bot Connected Successfully!');
         }
     });
 }
