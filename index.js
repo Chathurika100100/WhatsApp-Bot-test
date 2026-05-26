@@ -90,13 +90,11 @@ async function searchFitGirl(query) {
         
         const html = response.data;
         const matches = [];
-        // FitGirl වෙබ් අඩවියේ පෝස්ට් වල මාතෘකා සහ ලින්ක් වෙන් කර හඳුනාගන්නා Regex රටාව
         const regex = /<h[1-2]\s+class="entry-title"><a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
         let match;
         
         while ((match = regex.exec(html)) !== null && matches.length < 5) {
             let title = match[2].replace(/<\/?[^>]+(>|$)/g, "").trim(); 
-            // WordPress අකුරු ගැටලු (HTML Entities) මඟහැරවීම
             title = title
                 .replace(/&#8211;/g, '-')
                 .replace(/&#8217;/g, "'")
@@ -109,6 +107,41 @@ async function searchFitGirl(query) {
     } catch (error) {
         console.error("FitGirl Search Error:", error);
         return [];
+    }
+}
+
+// 🔗 Link Extractor Core Engine (New)
+async function extractFitGirlLinks(pageUrl) {
+    try {
+        const response = await axios.get(pageUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        const html = response.data;
+        
+        // FitGirl පිටුවේ ඇති paste.fitgirl-repacks.site ලින්ක් එක සොයා ගැනීම
+        const pasteMatch = html.match(/https:\/\/paste\.fitgirl-repacks\.site\/[^\s"'>]+/i);
+        if (!pasteMatch) return { success: false, message: 'මෙම ගේම් එක සඳහා Paste ලින්ක් එකක් හමු නොවීය.' };
+        
+        const pasteUrl = pasteMatch[0].replace(/&amp;/g, '&');
+        
+        // Paste පිටුවේ HTML දත්ත ලබා ගැනීම
+        const pasteResponse = await axios.get(pasteUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        const pasteHtml = pasteResponse.data;
+        
+        // FuckingFast ලින්ක්ස් පමණක් වෙන් කර හඳුනා ගැනීම
+        const ffLinks = pasteHtml.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/g) || [];
+        const uniqueLinks = [...new Set(ffLinks)]; // ඩූපිලිකේට් ලින්ක් ඉවත් කිරීම
+        
+        return { success: true, links: uniqueLinks };
+    } catch (error) {
+        console.error("Link Extraction Error:", error);
+        return { success: false, message: error.message };
     }
 }
 
@@ -174,7 +207,6 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid) {
         let downloadedLength = 0;
         let lastUpdateTime = Date.now();
 
-        // 📁 temp folder එක ඇතුලටම දානවා සේෆ් වෙන්න
         tempFilePath = path.join(tempFolder, `${Date.now()}_${fileName}`);
         const writer = fs.createWriteStream(tempFilePath);
 
@@ -189,7 +221,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid) {
             downloadedLength += chunk.length;
             const now = Date.now();
             
-            if (now - lastUpdateTime > 3000) { // WhatsApp Rate limit නොවීමට තත්පර 3ක් කරා
+            if (now - lastUpdateTime > 3000) { 
                 lastUpdateTime = now;
                 const dlMB = (downloadedLength / (1024 * 1024)).toFixed(1);
                 
@@ -206,9 +238,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid) {
             }
         });
 
-        // Stream error catch එකක් දැම්මා හදිසියේ නෙට් කැඩුනොත් බොට් බේරගන්න
         response.data.on('error', (err) => { writer.destroy(); });
-
         response.data.pipe(writer);
 
         await new Promise((resolve, reject) => {
@@ -298,7 +328,15 @@ async function startBot() {
                      msg.message?.imageMessage?.caption || 
                      msg.message?.videoMessage?.caption || "";
                      
-        if (!text.startsWith('.')) return; 
+        // 💬 Reply මැසේජ් එකක විස්තර ලබා ගැනීම
+        const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+        const quotedMsg = quotedContext?.quotedMessage;
+        const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || "";
+        
+        // 🔎 එය FitGirl සෙවුම් ප්‍රතිඵලයකට කරන ලද අංක රිප්ලයි එකක්දැයි බැලීම
+        const isFitGirlReply = quotedText.includes('𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝚂𝙴𝙰𝚁𝙲𝙷') && /^[1-5]$/.test(text.trim());
+
+        if (!text.startsWith('.') && !isFitGirlReply) return; 
 
         const senderJid = msg.key.participant || msg.key.remoteJid || ""; 
         const chatJid = msg.key.remoteJid;
@@ -315,6 +353,38 @@ async function startBot() {
                 `_This bot is restricted to authorized users only._\n\n` +
                 `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
             return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
+        }
+        
+        // 🎯 Handle FitGirl Selection Reply (New Feature)
+        if (isFitGirlReply) {
+            const index = parseInt(text.trim()) - 1;
+            // රිප්ලයි කරපු මැසේජ් එකේ තියෙන සයිට් ලින්ක්ස් ටික වෙන් කර ගැනීම
+            const urls = quotedText.match(/https?:\/\/fitgirl-repacks\.site\/[^\s"'<>]+/g) || [];
+            
+            if (index < 0 || index >= urls.length) {
+                return await sock.sendMessage(chatJid, { text: '❌ අවලංගු අංකයකි. කරුණාකර ලැයිස්තුවේ ඇති අංකයක් තෝරන්න.' }, { quoted: msg });
+            }
+            
+            const targetUrl = urls[index];
+            const processingMsg = await sock.sendMessage(chatJid, { text: '🔄 *RV Games Bot* පිටුව පරීක්ෂා කර ලින්ක්ස් එකතු කරමින් පවතී...' }, { quoted: msg });
+            
+            const extractResult = await extractFitGirlLinks(targetUrl);
+            
+            if (!extractResult.success || extractResult.links.length === 0) {
+                return await sock.sendMessage(chatJid, { text: `❌ ලින්ක්ස් ලබා ගැනීමට නොහැකි විය: ${extractResult.message || 'FuckingFast ලින්ක්ස් සොයාගත නොහැකි විය.'}`, edit: processingMsg.key });
+            }
+            
+            let replyLinksText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
+                                 `📦 තෝරාගත් ගේම් එකේ සියලුම *FuckingFast* කොටස් මෙන්න:\n\n`;
+                                 
+            extractResult.links.forEach((link) => {
+                replyLinksText += `🔗 ${link}\n`;
+            });
+            
+            replyLinksText += `\n💡 _මෙම ලින්ක්ස් සියල්ල එකවර කොපි කර .si හෝ .sg කමාන්ඩ් මඟින් සර්වර් එකට දමා බාගත කරගත හැක._\n\n` +
+                              `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+            
+            return await sock.sendMessage(chatJid, { text: replyLinksText, edit: processingMsg.key });
         }
         
         const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -448,7 +518,7 @@ async function startBot() {
             }
         }
 
-        // 5️⃣ .dc Command (Disk Cleaner - Safe Version)
+        // 5️⃣ .dc Command (Disk Cleaner)
         else if (text.trim() === '.dc') {
             const dcNotify = await sock.sendMessage(chatJid, { text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...' }, { quoted: msg });
             try {
@@ -485,7 +555,7 @@ async function startBot() {
             setTimeout(() => { process.exit(0); }, 1000);
         }
 
-        // 7️⃣ .fg Command (New FitGirl Search Command)
+        // 7️⃣ .fg Command (FitGirl Search)
         else if (text.startsWith('.fg ')) {
             const query = text.replace('.fg ', '').trim();
             if (!query) return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර සෙවිය යුතු ගේම් එකේ නම ලබා දෙන්න. (Ex: .fg Far Cry 3)' }, { quoted: msg });
@@ -505,7 +575,7 @@ async function startBot() {
                 replyText += `🔗 𝖫𝗂𝗇𝗄: ${game.link}\n\n`;
             });
 
-            replyText += `💡 _මෙහි ඇති ලින්ක් එකක් කොපි කරගෙන .si හෝ .sg කමාන්ඩ් මඟින් සර්වර් එකට දමා ඩවුන්ලෝඩ් කරගත හැක._\n\n` +
+            replyText += `💡 _මෙහි ඇති මැසේජ් එකට අදාළ අංකයෙන් (1-5) Reply කර සෘජුවම FuckingFast ලින්ක්ස් ලබා ගන්න._\n\n` +
                         `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
             await sock.sendMessage(chatJid, { text: replyText, edit: searchNotify.key });
@@ -514,7 +584,7 @@ async function startBot() {
         // 8️⃣ .menu Command 
         else if (text.trim() === '.menu') {
             const menuText = 
-                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                 `╔════════════════════╗\n` +
                 `┃   🤖 *MAIN COMMANDS MENU* \n` +
                 `╚════════════════════╝\n` +
