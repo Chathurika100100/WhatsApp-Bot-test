@@ -6,6 +6,8 @@ import path from 'path';
 import http from 'http'; 
 import axios from 'axios'; 
 import NodeCache from 'node-cache';
+import crypto from 'crypto';
+import zlib from 'zlib';
 
 // 🌐 Web Server for Railway
 const server = http.createServer((req, res) => {
@@ -17,11 +19,10 @@ server.listen(PORT, () => {
 });
 
 const authFolder = './bot_session';
-const tempFolder = './temp'; // 📂 තාවකාලික ෆයිල් සඳහා වෙනම ෆෝල්ඩර් එකක්
+const tempFolder = './temp'; 
 const activeTasks = new Map(); 
 const msgRetryCounterCache = new NodeCache();
 
-// ෆෝල්ඩර්ස් කලින්ම සාදා ගැනීම
 if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
 
 // 📂 Session ID Setup
@@ -78,6 +79,85 @@ function getExtensionFromMime(mimeType) {
     return map[mimeType] || '.bin';
 }
 
+// 🔠 Base58 Decoder for PrivateBin Keys
+function decodeBase58(str) {
+    const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    const BASE = BigInt(58);
+    let num = BigInt(0);
+    for (let i = 0; i < str.length; i++) {
+        const idx = ALPHABET.indexOf(str[i]);
+        if (idx === -1) throw new Error("Invalid Base58 character");
+        num = num * BASE + BigInt(idx);
+    }
+    let bytes = [];
+    while (num > 0) {
+        bytes.unshift(Number(num & BigInt(0xff)));
+        num = num >> BigInt(8);
+    }
+    for (let i = 0; i < str.length && str[i] === '1'; i++) {
+        bytes.unshift(0);
+    }
+    return Buffer.from(bytes);
+}
+
+// 🔓 PrivateBin v2 Decryptor (FitGirl Paste Site Engine)
+async function decryptPrivateBin(pasteUrl) {
+    const urlObj = new URL(pasteUrl);
+    const pasteId = urlObj.search.substring(1);
+    const hashKey = urlObj.hash.substring(1);
+
+    if (!pasteId || !hashKey) {
+        throw new Error("Invalid PrivateBin URL format.");
+    }
+
+    const response = await axios.get(`https://paste.fitgirl-repacks.site/?${pasteId}`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
+
+    const resData = response.data;
+    if (!resData || resData.status !== 0) {
+        throw new Error("Failed to fetch encrypted paste data or status is invalid.");
+    }
+
+    const cipherTextAndTag = Buffer.from(resData.ct, 'base64');
+    const adata = resData.adata;
+
+    const iv = Buffer.from(adata[0], 'base64');
+    const salt = Buffer.from(adata[1], 'base64');
+    const iterations = adata[2];
+    const keySize = adata[3]; 
+    const tagSize = adata[4] / 8; 
+    const compression = adata[7]; 
+
+    const masterKey = decodeBase58(hashKey);
+    const key = crypto.pbkdf2Sync(masterKey, salt, iterations, keySize / 8, 'sha256');
+
+    const authTag = cipherTextAndTag.subarray(cipherTextAndTag.length - tagSize);
+    const encryptedData = cipherTextAndTag.subarray(0, cipherTextAndTag.length - tagSize);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    decipher.setAAD(Buffer.from(JSON.stringify(adata), 'utf8'));
+
+    let decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
+
+    if (compression === 'zlib') {
+        decrypted = zlib.inflateRawSync(decrypted);
+    }
+
+    let pasteContent = decrypted.toString('utf-8');
+    try {
+        const parsed = JSON.parse(pasteContent);
+        if (parsed.paste) pasteContent = parsed.paste;
+    } catch (e) {}
+
+    return pasteContent;
+}
+
 // 🔍 FitGirl Search Core Engine
 async function searchFitGirl(query) {
     try {
@@ -110,7 +190,7 @@ async function searchFitGirl(query) {
     }
 }
 
-// 🔗 Link Extractor Core Engine (New)
+// 🔗 Link Extractor Core Engine (Fixed)
 async function extractFitGirlLinks(pageUrl) {
     try {
         const response = await axios.get(pageUrl, {
@@ -120,23 +200,17 @@ async function extractFitGirlLinks(pageUrl) {
         });
         const html = response.data;
         
-        // FitGirl පිටුවේ ඇති paste.fitgirl-repacks.site ලින්ක් එක සොයා ගැනීම
         const pasteMatch = html.match(/https:\/\/paste\.fitgirl-repacks\.site\/[^\s"'>]+/i);
         if (!pasteMatch) return { success: false, message: 'මෙම ගේම් එක සඳහා Paste ලින්ක් එකක් හමු නොවීය.' };
         
         const pasteUrl = pasteMatch[0].replace(/&amp;/g, '&');
         
-        // Paste පිටුවේ HTML දත්ත ලබා ගැනීම
-        const pasteResponse = await axios.get(pasteUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        });
-        const pasteHtml = pasteResponse.data;
+        // Decrypt using the new PrivateBin Decryptor Engine
+        const decryptedPasteContent = await decryptPrivateBin(pasteUrl);
         
-        // FuckingFast ලින්ක්ස් පමණක් වෙන් කර හඳුනා ගැනීම
-        const ffLinks = pasteHtml.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/g) || [];
-        const uniqueLinks = [...new Set(ffLinks)]; // ඩූපිලිකේට් ලින්ක් ඉවත් කිරීම
+        // FuckingFast ලින්ක්ස් වෙන් කර හඳුනා ගැනීම
+        const ffLinks = decryptedPasteContent.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/g) || [];
+        const uniqueLinks = [...new Set(ffLinks)]; 
         
         return { success: true, links: uniqueLinks };
     } catch (error) {
@@ -328,12 +402,10 @@ async function startBot() {
                      msg.message?.imageMessage?.caption || 
                      msg.message?.videoMessage?.caption || "";
                      
-        // 💬 Reply මැසේජ් එකක විස්තර ලබා ගැනීම
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsg = quotedContext?.quotedMessage;
         const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || "";
         
-        // 🔎 එය FitGirl සෙවුම් ප්‍රතිඵලයකට කරන ලද අංක රිප්ලයි එකක්දැයි බැලීම
         const isFitGirlReply = quotedText.includes('𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝚂𝙴𝙰𝚁𝙲𝙷') && /^[1-5]$/.test(text.trim());
 
         if (!text.startsWith('.') && !isFitGirlReply) return; 
@@ -355,10 +427,9 @@ async function startBot() {
             return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
         }
         
-        // 🎯 Handle FitGirl Selection Reply (New Feature)
+        // 🎯 Handle FitGirl Selection Reply
         if (isFitGirlReply) {
             const index = parseInt(text.trim()) - 1;
-            // රිප්ලයි කරපු මැසේජ් එකේ තියෙන සයිට් ලින්ක්ස් ටික වෙන් කර ගැනීම
             const urls = quotedText.match(/https?:\/\/fitgirl-repacks\.site\/[^\s"'<>]+/g) || [];
             
             if (index < 0 || index >= urls.length) {
@@ -377,11 +448,18 @@ async function startBot() {
             let replyLinksText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
                                  `📦 තෝරාගත් ගේම් එකේ සියලුම *FuckingFast* කොටස් මෙන්න:\n\n`;
                                  
-            extractResult.links.forEach((link) => {
-                replyLinksText += `🔗 ${link}\n`;
+            extractResult.links.forEach((link, idx) => {
+                // ලින්ක් එකෙන් ෆයිල් එකේ නම පමණක් වෙන් කර පෙන්වීම
+                let partName = 'Part ' + (idx + 1);
+                try {
+                    const decodeName = decodeURIComponent(link.split('/').pop());
+                    if (decodeName) partName = decodeName;
+                } catch(e){}
+                
+                replyLinksText += `📄 *${partName}*\n🔗 ${link}\n\n`;
             });
             
-            replyLinksText += `\n💡 _මෙම ලින්ක්ස් සියල්ල එකවර කොපි කර .si හෝ .sg කමාන්ඩ් මඟින් සර්වර් එකට දමා බාගත කරගත හැක._\n\n` +
+            replyLinksText += `💡 _මෙම ලින්ක්ස් සියල්ල එකවර කොපි කර .si හෝ .sg කමාන්ඩ් මඟින් සර්වර් එකට දමා බාගත කරගත හැක._\n\n` +
                               `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
             
             return await sock.sendMessage(chatJid, { text: replyLinksText, edit: processingMsg.key });
@@ -567,7 +645,7 @@ async function startBot() {
                 return await sock.sendMessage(chatJid, { text: `❌ *'${query}'* වෙනුවෙන් කිසිදු ගේම් එකක් සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිව ටයිප් කරන්න.`, edit: searchNotify.key });
             }
 
-            let replyText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝚂𝙴𝙰𝚁𝙲𝙷* 🎮\n\n` +
+            let replyText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
                             `🔍 Search Result For: *${query}*\n\n`;
 
             results.forEach((game, index) => {
@@ -608,7 +686,7 @@ async function startBot() {
                 `┃\n` +
                 `┃ 📜 *.menu*\n` +
                 `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
-                `╚════════════════════╝\n\n` +
+                ╚════════════════════╝\n\n` +
                 `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
                 
             await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
