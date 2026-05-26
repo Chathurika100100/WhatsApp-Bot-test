@@ -686,7 +686,7 @@ async function startBot() {
                 `┃\n` +
                 `┃ 📜 *.menu*\n` +
                 `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
-                ╚════════════════════╝\n\n` +
+                `╚════════════════════╝\n\n` +
                 `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
                 
             await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
