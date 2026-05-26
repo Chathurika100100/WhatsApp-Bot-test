@@ -190,7 +190,7 @@ async function searchFitGirl(query) {
     }
 }
 
-// 🔗 Link Extractor Core Engine (Fixed)
+// 🔗 Link Extractor Core Engine (Fixed for Part Names)
 async function extractFitGirlLinks(pageUrl) {
     try {
         const response = await axios.get(pageUrl, {
@@ -205,14 +205,62 @@ async function extractFitGirlLinks(pageUrl) {
         
         const pasteUrl = pasteMatch[0].replace(/&amp;/g, '&');
         
-        // Decrypt using the new PrivateBin Decryptor Engine
+        // Decrypt using the PrivateBin Decryptor Engine
         const decryptedPasteContent = await decryptPrivateBin(pasteUrl);
         
-        // FuckingFast ලින්ක්ස් වෙන් කර හඳුනා ගැනීම
-        const ffLinks = decryptedPasteContent.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/g) || [];
-        const uniqueLinks = [...new Set(ffLinks)]; 
+        // FuckingFast ලින්ක්ස් සහ ඒවායේ නම් වෙන් කර හඳුනා ගැනීම
+        const lines = decryptedPasteContent.split('\n');
+        const extractedLinks = [];
+        const seenLinks = new Set();
+        let fallbackCounter = 1;
+
+        for (let line of lines) {
+            const ffMatch = line.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/i);
+            if (ffMatch) {
+                const link = ffMatch[0].replace(/&amp;/g, '&');
+                if (!seenLinks.has(link)) {
+                    seenLinks.add(link);
+                    
+                    // රේඛාවෙන් ලින්ක් එක ඉවත් කර පිරිසිදු කර නම පමණක් ලබා ගැනීම
+                    let partName = line.replace(link, '')
+                        .replace(/https?:\/\/[^\s]+/g, '')
+                        .replace(/[\[\]\(\):\-─═|=+*]/g, '')
+                        .trim();
+                    
+                    if (!partName || partName.length < 2) {
+                        try {
+                            const urlFilename = decodeURIComponent(link.split('/').pop());
+                            if (urlFilename && urlFilename.includes('.')) {
+                                partName = urlFilename;
+                            } else {
+                                partName = `Part ${fallbackCounter}`;
+                            }
+                        } catch (e) {
+                            partName = `Part ${fallbackCounter}`;
+                        }
+                    }
+                    
+                    extractedLinks.push({ name: partName, link: link });
+                    fallbackCounter++;
+                }
+            }
+        }
+
+        // Fallback ක්‍රමවේදය (රේඛීයව හසු නොවුවහොත්)
+        if (extractedLinks.length === 0) {
+            const ffLinks = decryptedPasteContent.match(/https:\/\/fuckingfast\.co\/[^\s"'>]+/g) || [];
+            const uniqueLinks = [...new Set(ffLinks)];
+            uniqueLinks.forEach((link, idx) => {
+                let partName = `Part ${idx + 1}`;
+                try {
+                    const urlFilename = decodeURIComponent(link.split('/').pop());
+                    if (urlFilename && urlFilename.includes('.')) partName = urlFilename;
+                } catch(e){}
+                extractedLinks.push({ name: partName, link: link });
+            });
+        }
         
-        return { success: true, links: uniqueLinks };
+        return { success: true, links: extractedLinks };
     } catch (error) {
         console.error("Link Extraction Error:", error);
         return { success: false, message: error.message };
@@ -419,7 +467,7 @@ async function startBot() {
 
         if (!allowedNumbers.includes(senderNumber)) {
             const privateMessage = 
-                `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+                `🔒 *𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                 `❌ *Sorry, Access Denied!*\n` +
                 `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
                 `_This bot is restricted to authorized users only._\n\n` +
@@ -448,15 +496,8 @@ async function startBot() {
             let replyLinksText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
                                  `📦 තෝරාගත් ගේම් එකේ සියලුම *FuckingFast* කොටස් මෙන්න:\n\n`;
                                  
-            extractResult.links.forEach((link, idx) => {
-                // ලින්ක් එකෙන් ෆයිල් එකේ නම පමණක් වෙන් කර පෙන්වීම
-                let partName = 'Part ' + (idx + 1);
-                try {
-                    const decodeName = decodeURIComponent(link.split('/').pop());
-                    if (decodeName) partName = decodeName;
-                } catch(e){}
-                
-                replyLinksText += `📄 *${partName}*\n🔗 ${link}\n\n`;
+            extractResult.links.forEach((item) => {
+                replyLinksText += `📄 *${item.name}*\n🔗 ${item.link}\n\n`;
             });
             
             replyLinksText += `💡 _මෙම ලින්ක්ස් සියල්ල එකවර කොපි කර .si හෝ .sg කමාන්ඩ් මඟින් සර්වර් එකට දමා බාගත කරගත හැක._\n\n` +
@@ -515,7 +556,7 @@ async function startBot() {
                 if (uploadedCount > 0 && !wasStopped) {
                     const summaryText = 
                         `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                        `         ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                        `          ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
                         `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                         `┌────────────────────────\n` +
                         `│ ✅ Status: Done\n` +
@@ -546,7 +587,7 @@ async function startBot() {
 
                 if (task.progressMsgKey) {
                     const stoppedText = `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                                        `         ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                                        `          ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
                                         `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                                         `🛑 *Status: Process Stopped!*\n` +
                                         `⚠️ _දත්ත බාගත කිරීම හෝ යැවීම පරිශීලකයා විසින් නවතා දමා ඇත._\n\n` +
@@ -645,7 +686,7 @@ async function startBot() {
                 return await sock.sendMessage(chatJid, { text: `❌ *'${query}'* වෙනුවෙන් කිසිදු ගේම් එකක් සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිව ටයිප් කරන්න.`, edit: searchNotify.key });
             }
 
-            let replyText = `*🎮 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
+            let replyText = `*🎮 𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙵𝙸𝚃𝙶𝙸𝚁𝙻 𝙻𝙸𝙽𝙺𝚂* 🎮\n\n` +
                             `🔍 Search Result For: *${query}*\n\n`;
 
             results.forEach((game, index) => {
@@ -662,9 +703,9 @@ async function startBot() {
         // 8️⃣ .menu Command 
         else if (text.trim() === '.menu') {
             const menuText = 
-                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                `*👑𝚁做 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                 `╔════════════════════╗\n` +
-                `┃   🤖 *MAIN COMMANDS MENU* \n` +
+                `┃    🤖 *MAIN COMMANDS MENU* \n` +
                 `╚════════════════════╝\n` +
                 `┃ 🎮 *.fg [game name]*\n` +
                 `┃ ↳ _FitGirl site එකෙන් ගේම් සර්ච් කර ලින්ක් ලබා දෙයි._\n` +
