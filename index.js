@@ -6,7 +6,7 @@ import path from 'path';
 import http from 'http'; 
 import axios from 'axios'; 
 import NodeCache from 'node-cache';
-import * as cheerio from 'cheerio'; // ⬅️ අලුතින් එක් කරන ලද Package එක
+import * as cheerio from 'cheerio'; 
 
 // 🌐 Web Server for Railway
 const server = http.createServer((req, res) => {
@@ -21,7 +21,7 @@ const authFolder = './bot_session';
 const tempFolder = './temp'; 
 const activeTasks = new Map(); 
 const msgRetryCounterCache = new NodeCache();
-const fgSearchCache = new Map(); // ⬅️ FitGirl Search මතකය තබා ගැනීමට
+const fgSearchCache = new Map(); // FitGirl Search මතකය තබා ගැනීමට
 
 if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
 
@@ -280,7 +280,7 @@ async function startBot() {
             return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
         }
 
-        // 🔄 8️⃣ .fg Reply Handler (මෙය . න් පටන් නොගන්නා Reply එකක් නිසා උඩින්ම තැබිය යුතුය)
+        // 🔄 FitGirl Reply Handler (. එකෙන් පටන් නොගන්නා Reply එකක් නිසා උඩින්ම තබා ඇත)
         const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
         if (quotedMsgId && fgSearchCache.has(chatJid)) {
             const cache = fgSearchCache.get(chatJid);
@@ -298,7 +298,7 @@ async function startBot() {
                         
                         let pasteLink = '';
                         
-                        // Method A: අලුත් FitGirl පෝස්ට් වල Spoiler ඇතුලේ තියෙනවා නම්
+                        // Method A: Spoiler ඇතුලේ තියෙනවා නම්
                         $g('.su-spoiler').each((i, el) => {
                             const title = $g(el).find('.su-spoiler-title').text();
                             if (title.toLowerCase().includes('fuckingfast')) {
@@ -307,7 +307,7 @@ async function startBot() {
                             }
                         });
                         
-                        // Method B: පරණ පෝස්ට් වල List (li) විදිහට තියෙනවා නම්
+                        // Method B: List (li) විදිහට තියෙනවා නම්
                         if (!pasteLink) {
                             $g('li').each((i, el) => {
                                 if ($g(el).text().toLowerCase().includes('fuckingfast')) {
@@ -441,7 +441,7 @@ async function startBot() {
 
                 if (task.progressMsgKey) {
                     const stoppedText = `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                                        `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼ेष ⚙️\n` +
+                                        `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
                                         `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                                         `🛑 *Status: Process Stopped!*\n` +
                                         `⚠️ _දත්ත බාගත කිරීම හෝ යැවීම පරිශීලකයා විසින් නවතා දමා ඇත._\n\n` +
@@ -491,7 +491,7 @@ async function startBot() {
             }
         }
 
-        // 5️⃣ .dc Command (Disk Cleaner - Safe Version)
+        // 5️⃣ .dc Command (Disk Cleaner)
         else if (text.trim() === '.dc') {
             const dcNotify = await sock.sendMessage(chatJid, { text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...' }, { quoted: msg });
             try {
@@ -541,7 +541,7 @@ async function startBot() {
                 
                 const results = [];
                 $('article').each((i, el) => {
-                    if(i >= 10) return; // Search results 10 කට සීමා කර ඇත
+                    if(i >= 10) return; 
                     const title = $(el).find('.entry-title a').text().trim();
                     const link = $(el).find('.entry-title a').attr('href');
                     if(title && link) results.push({ title, link });
@@ -559,7 +559,6 @@ async function startBot() {
                 
                 const sentMsg = await sock.sendMessage(chatJid, { text: replyText, edit: fgNotify.key });
                 
-                // Reply එක හඳුනාගැනීමට Message ID එක Cache එකේ සේව් කරමු
                 fgSearchCache.set(chatJid, {
                     msgId: sentMsg.key.id,
                     results: results
@@ -573,7 +572,7 @@ async function startBot() {
         // 7️⃣ .menu Command 
         else if (text.trim() === '.menu') {
             const menuText = 
-                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙷𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                 `╔════════════════════╗\n` +
                 `┃  🤖 *MAIN COMMANDS MENU* \n` +
                 `╚════════════════════╝\n` +
