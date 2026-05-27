@@ -10,10 +10,10 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.3",
     "axios": "^1.6.8",
+    "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "pino": "^8.21.0",
-    "node-cache": "^5.1.2",
-    "puppeteer": "^22.7.1"
+    "node-cache": "^5.1.2"
   },
   "author": "RV Games",
   "license": "MIT"
