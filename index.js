@@ -281,79 +281,100 @@ async function startBot() {
             return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
         }
 
+        // URL Extractor for .si and .sg commands
+        const urls = text.match(/(https?:\/\/[^\s]+)/g) || [];
+
         // 🔄 FitGirl Reply Handler (. එකෙන් පටන් නොගන්නා Reply එකක් නිසා උඩින්ම තබා ඇත)
-        try {
-    // 1. ගේම් එකේ ප්‍රධාන පිටුවට යාම
-    const gameRes = await axios.get(selectedGame.link);
-    const $g = cheerio.load(gameRes.data);
-    
-    let pasteLink = '';
-    
-    // FitGirl ගේ HTML ව්‍යුහය වෙනස් වෙන නිසා li සහ spoiler දෙකම පරීක්ෂා කරමු
-    $g('li, .su-spoiler').each((i, el) => {
-        const text = $g(el).text().toLowerCase();
-        if (text.includes('fuckingfast')) {
-            const aHref = $g(el).find('a[href*="paste.fitgirl-repacks.site"]').attr('href');
-            if (aHref) pasteLink = aHref;
-        }
-    });
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+        if (contextInfo && fgSearchCache.has(chatJid)) {
+            const cacheData = fgSearchCache.get(chatJid);
+            
+            // Check if the user replied to the specific search message
+            if (contextInfo.stanzaId === cacheData.msgId) {
+                const selection = parseInt(text.trim());
+                
+                if (!isNaN(selection) && selection > 0 && selection <= cacheData.results.length) {
+                    const selectedGame = cacheData.results[selection - 1];
+                    const extractNotify = await sock.sendMessage(chatJid, { text: `⏳ *${selectedGame.title}* සඳහා ලින්ක් ලබා ගනිමින්...` }, { quoted: msg });
 
-    if (!pasteLink) {
-        return await sock.sendMessage(chatJid, { text: '❌ මෙම ගේම් එක සඳහා FuckingFast ලින්ක් එකක් සොයාගත නොහැකි විය.', edit: extractNotify.key });
-    }
-    
-    // 2. Pastebin එක Decrypt කරන්න Puppeteer පාවිච්චි කිරීම
-    await sock.sendMessage(chatJid, { text: '⏳ *Pastebin එක Decrypt කරමින් පවතී. කරුණාකර රැඳී සිටින්න...*', edit: extractNotify.key });
+                    try {
+                        // 1. ගේම් එකේ ප්‍රධාන පිටුවට යාම
+                        const gameRes = await axios.get(selectedGame.link);
+                        const $g = cheerio.load(gameRes.data);
+                        
+                        let pasteLink = '';
+                        
+                        // FitGirl ගේ HTML ව්‍යුහය වෙනස් වෙන නිසා li සහ spoiler දෙකම පරීක්ෂා කරමු
+                        $g('li, .su-spoiler').each((i, el) => {
+                            const liText = $g(el).text().toLowerCase();
+                            if (liText.includes('fuckingfast')) {
+                                const aHref = $g(el).find('a[href*="paste.fitgirl-repacks.site"]').attr('href');
+                                if (aHref) pasteLink = aHref;
+                            }
+                        });
 
-    const browser = await puppeteer.launch({ 
-        headless: "new",
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-        ] 
-    });
-    const page = await browser.newPage();
-    await page.goto(pasteLink, { waitUntil: 'networkidle2' });
-    
-    // Decrypt වෙලා links ටික Load වෙනකම් උපරිම තත්පර 15ක් බලමු
-    await page.waitForSelector('#cleartext a', { timeout: 15000 }).catch(() => {});
+                        if (!pasteLink) {
+                            return await sock.sendMessage(chatJid, { text: '❌ මෙම ගේම් එක සඳහා FuckingFast ලින්ක් එකක් සොයාගත නොහැකි විය.', edit: extractNotify.key });
+                        }
+                        
+                        // 2. Pastebin එක Decrypt කරන්න Puppeteer පාවිච්චි කිරීම
+                        await sock.sendMessage(chatJid, { text: '⏳ *Pastebin එක Decrypt කරමින් පවතී. කරුණාකර රැඳී සිටින්න...*', edit: extractNotify.key });
 
-    // 3. Links වල නම් ටික ලබා ගැනීම
-    const fileNames = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('#cleartext a'));
-        return links.map(a => {
-            const href = a.href;
-            let name = '';
-            if (href.includes('#')) {
-                name = href.split('#')[1];
-            } else {
-                const parts = href.split('/');
-                name = parts[parts.length - 1];
+                        const browser = await puppeteer.launch({ 
+                            headless: true, // "new" වෙනුවට true භාවිතා කර ඇත
+                            args: [
+                                '--no-sandbox', 
+                                '--disable-setuid-sandbox',
+                                '--disable-dev-shm-usage',
+                                '--disable-gpu'
+                            ] 
+                        });
+                        const page = await browser.newPage();
+                        await page.goto(pasteLink, { waitUntil: 'networkidle2' });
+                        
+                        // Decrypt වෙලා links ටික Load වෙනකම් උපරිම තත්පර 15ක් බලමු
+                        await page.waitForSelector('#cleartext a', { timeout: 15000 }).catch(() => {});
+
+                        // 3. Links වල නම් ටික ලබා ගැනීම
+                        const fileNames = await page.evaluate(() => {
+                            const links = Array.from(document.querySelectorAll('#cleartext a'));
+                            return links.map(a => {
+                                const href = a.href;
+                                let name = '';
+                                if (href.includes('#')) {
+                                    name = href.split('#')[1];
+                                } else {
+                                    const parts = href.split('/');
+                                    name = parts[parts.length - 1];
+                                }
+                                return decodeURIComponent(name).replace(/_|-/g, ' '); // නම ටිකක් පැහැදිලි කරන්න
+                            }).filter(name => name);
+                        });
+
+                        await browser.close();
+
+                        if (fileNames.length === 0) {
+                            return await sock.sendMessage(chatJid, { text: '❌ FuckingFast පිටුවේ ෆයිල් නම් කිසිවක් සොයාගත නොහැකි විය.', edit: extractNotify.key });
+                        }
+                        
+                        // 4. නම් ටික ලස්සනට යැවීම
+                        const partsMsg = `🎯 *${selectedGame.title}*\n\n📦 *FuckingFast Parts:*\n` + 
+                                         fileNames.map((n, i) => `*${i+1}.* ${n}`).join('\n') + 
+                                         `\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*`;
+                        
+                        await sock.sendMessage(chatJid, { text: partsMsg, edit: extractNotify.key });
+                        fgSearchCache.delete(chatJid); 
+                        
+                    } catch (err) {
+                        console.error(err);
+                        await sock.sendMessage(chatJid, { text: '❌ Links ලබාගැනීමේදී සර්වර් දෝෂයක් ඇතිවිය. Log එක පරීක්ෂා කරන්න.', edit: extractNotify.key });
+                    }
+                    return; // Reply එකක් handle කරපු නිසා තවත් පල්ලෙහාට යන්න ඕන නෑ
+                } else {
+                    return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර වලංගු අංකයක් පමණක් ලබා දෙන්න.' }, { quoted: msg });
+                }
             }
-            return decodeURIComponent(name).replace(/_|-/g, ' '); // නම ටිකක් පැහැදිලි කරන්න
-        }).filter(name => name);
-    });
-
-    await browser.close();
-
-    if (fileNames.length === 0) {
-        return await sock.sendMessage(chatJid, { text: '❌ FuckingFast පිටුවේ ෆයිල් නම් කිසිවක් සොයාගත නොහැකි විය.', edit: extractNotify.key });
-    }
-    
-    // 4. නම් ටික ලස්සනට යැවීම
-    const partsMsg = `🎯 *${selectedGame.title}*\n\n📦 *FuckingFast Parts:*\n` + 
-                     fileNames.map((n, i) => `*${i+1}.* ${n}`).join('\n') + 
-                     `\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*`;
-    
-    await sock.sendMessage(chatJid, { text: partsMsg, edit: extractNotify.key });
-    fgSearchCache.delete(chatJid); 
-    
-} catch (err) {
-    console.error(err);
-    await sock.sendMessage(chatJid, { text: '❌ Links ලබාගැනීමේදී සර්වර් දෝෂයක් ඇතිවිය. Log එක පරීක්ෂා කරන්න.', edit: extractNotify.key });
-}
+        }
 
         // 1️⃣ .si Command 
         if (text.startsWith('.si ')) {
