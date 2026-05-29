@@ -30,30 +30,43 @@ const fgStates = new Map();
 
 if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
 
-// 📂 Session ID Setup
+// 📂 Advanced Session ID Setup & Auto-Wiper
 function setupSession() {
-    const credsPath = path.join(authFolder, 'creds.json');
-    if (fs.existsSync(credsPath)) return console.log("📂 පැරණි සෙෂන් දත්ත සොයාගන්නා ලදී...");
-
-    const sessionId = process.env.SESSION_ID;
-    if (!sessionId) {
+    const envSession = process.env.SESSION_ID;
+    if (!envSession) {
         console.error("❌ ERROR: Railway Variables වල SESSION_ID එක දමා නැත!");
         process.exit(1);
     }
-    
+
+    const idTrackerPath = './session_tracker.txt';
+    let oldId = '';
+    if (fs.existsSync(idTrackerPath)) {
+        oldId = fs.readFileSync(idTrackerPath, 'utf-8');
+    }
+
+    // උඹ අලුත් SESSION_ID එකක් දැම්මොත්, මේකෙන් පරණ ෆෝල්ඩරේ මකලා දානවා!
+    if (oldId !== envSession) {
+        console.log("🔄 අලුත් SESSION_ID එකක් හඳුනාගත්තා! පැරණි සෙෂන් දත්ත මකා දමමින්...");
+        if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true });
+        fs.writeFileSync(idTrackerPath, envSession);
+    }
+
+    const credsPath = path.join(authFolder, 'creds.json');
+    if (fs.existsSync(credsPath)) return console.log("📂 වලංගු සෙෂන් දත්ත සොයාගන්නා ලදී...");
+
     fs.mkdirSync(authFolder, { recursive: true });
     try {
-        let base64String = sessionId;
-        if (sessionId.includes(';;;')) base64String = sessionId.split(';;;').pop();
-        else if (sessionId.includes('~')) base64String = sessionId.split('~').pop();
-        else if (sessionId.includes(':')) base64String = sessionId.split(':').pop();
+        let base64String = envSession;
+        if (envSession.includes(';;;')) base64String = envSession.split(';;;').pop();
+        else if (envSession.includes('~')) base64String = envSession.split('~').pop();
+        else if (envSession.includes(':')) base64String = envSession.split(':').pop();
 
         const decrypted = Buffer.from(base64String, 'base64').toString('utf-8');
         JSON.parse(decrypted); 
         fs.writeFileSync(credsPath, decrypted);
-        console.log("✅ SESSION_ID එක සාර්ථකව ක්‍රියාත්මක කරන ලදී!");
+        console.log("✅ අලුත් SESSION_ID එක සාර්ථකව ක්‍රියාත්මක කරන ලදී!");
     } catch (err) {
-        console.error("❌ ERROR: SESSION_ID එකේ දෝෂයක් පවතී!");
+        console.error("❌ ERROR: SESSION_ID එකේ දෝෂයක් පවතී! කරුණාකර නිවැරදි එකක් ලබා දෙන්න.");
         process.exit(1); 
     }
 }
@@ -252,9 +265,9 @@ async function startBot() {
     const sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: true, // 💡 සෙෂන් මැරුණොත් ලොග් එකේ QR එක බලාගන්න මේක true කරා
+        printQRInTerminal: true, 
         logger: pino({ level: 'silent' }), 
-        browser: ['RV Games Bot', 'Chrome', '1.0.0'],
+        browser: ['Ubuntu', 'Chrome', '20.0.04'], // 💡 WhatsApp එකෙන් බෑන් නොවෙන්න 'RV Games Bot' වෙනුවට Ubuntu දැම්මා
         syncFullHistory: false,
         msgRetryCounterCache
     });
@@ -656,29 +669,31 @@ async function startBot() {
                         await sock.sendMessage(chatJid, { text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!` });
                     }
                 } else if (wasStopped) {
-                    await sock.sendMessage(chatJid, { text: `🛑 *පරිශීලකයා විසින් ක්‍රියාවලිය නැවැත්වූ නිසා Summary වාර්තාව අවලංගု කර ඇත.*` });
+                    await sock.sendMessage(chatJid, { text: `🛑 *පරිශීලකයා විසින් ක්‍රියාවලිය නැවැත්වූ නිසා Summary වාර්තාව අවලංගු කර ඇත.*` });
                 }
             }
         }
     });
 
-    // 📊 Enhanced Connection Tracking Log
+    // 📊 💡 ලෙඩේ හැදුවා: Disconnect ලූප් එක නතර කරන ලදී
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('⚠️ WARNING: QR කේතයක් ලැබුණා! ඔබගේ SESSION_ID එක කල් ඉකුත් වී ඇත (Expired). කරුණාකර අලුත් සෙෂන් එකක් සාදා ගන්න.');
+            console.log('⚠️ WARNING: QR කේතයක් ලැබුණා! ඔබගේ SESSION_ID එක කල් ඉකුත් වී ඇත (Expired). කරුණාකර අලුත් එකක් දමන්න.');
         }
         
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            console.log(`❌ Connection එක වැසුණා (Status Code: ${statusCode}). නැවත සම්බන්ධ වීමට උත්සාහ කරයි...`);
+            console.log(`❌ Connection එක වැසුණා (Status Code: ${statusCode}).`);
             
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 405) {
-                console.log('🚫 Session එක සම්පූර්ණයෙන්ම ඉවත් වී ඇත. පැරණි සෙෂන් ෆයිල් මකනවා...');
+            // 🚫 Undefined, 401, 403, 405 වගේ එනවා කියන්නේ සෙෂන් එක කුණු වෙලා. ඒ වෙලාවට ෆෝල්ඩරේ මකලා Railway එක Restart කරන්න දෙනවා!
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === undefined) {
+                console.log('🚫 Session එක අවලංගුයි හෝ දෝෂ සහිතයි. පැරණි සෙෂන් ෆයිල් මකා දමයි...');
                 if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true });
                 process.exit(1); 
             } else {
+                console.log('🔄 නැවත සම්බන්ධ වීමට උත්සාහ කරයි...');
                 setTimeout(() => startBot(), 5000); 
             }
         } else if (connection === 'open') {
