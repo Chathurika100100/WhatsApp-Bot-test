@@ -1,5 +1,5 @@
 import 'dotenv/config'; 
-import pkg from '@whiskeysockets/baileys'; // 💡 CJS පැකේජ් එක ESM වලට හරියන්න මෙහෙම ඉම්පෝට් කරනවා
+import pkg from '@whiskeysockets/baileys'; 
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
@@ -7,9 +7,11 @@ import http from 'http';
 import axios from 'axios'; 
 import NodeCache from 'node-cache';
 
-// Baileys functions ටික හරියටම ගලවා ගැනීම
-const makeWASocket = pkg.default || pkg;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = pkg;
+// 👑 Bulletproof ESM/CJS Interop Setup for Baileys
+const makeWASocket = pkg.makeWASocket || pkg.default?.makeWASocket || (typeof pkg.default === 'function' ? pkg.default : pkg);
+const useMultiFileAuthState = pkg.useMultiFileAuthState || pkg.default?.useMultiFileAuthState;
+const DisconnectReason = pkg.DisconnectReason || pkg.default?.DisconnectReason;
+const fetchLatestBaileysVersion = pkg.fetchLatestBaileysVersion || pkg.default?.fetchLatestBaileysVersion;
 
 // 🌐 Web Server for Railway
 const server = http.createServer((req, res) => {
@@ -243,13 +245,14 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, customFileName
 }
 
 async function startBot() {
+    console.log('🔄 WhatsApp සමඟ සම්බන්ධ වීමට උත්සාහ කරමින් (Connecting)...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion(); 
 
     const sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: true, // 💡 සෙෂන් මැරුණොත් ලොග් එකේ QR එක බලාගන්න මේක true කරා
         logger: pino({ level: 'silent' }), 
         browser: ['RV Games Bot', 'Chrome', '1.0.0'],
         syncFullHistory: false,
@@ -328,7 +331,6 @@ async function startBot() {
                 let wasStopped = false;
 
                 for (let url of urls) {
-                    // 💡 මෙතන තිබ්බ ටයිපෝ එක හැදුවා (targetGroupGroupJid -> targetGroupJid)
                     const success = await handleDownloadAndUpload(url, sock, msg, targetGroupJid);
                     if (success === 'STOPPED') { wasStopped = true; break; }
                     if (success) uploadedCount++;
@@ -561,7 +563,7 @@ async function startBot() {
                         });
 
                         partsText += `\n📥 *බාගත කර ගැනීමට මීළඟ පියවර:*\n`;
-                        partsText += `• Inbox එකටම ලබා ගැනීමට මෙම මැසේජ් එකට *si* ලෙස ਰිප්ලයි කරන්න.\n`;
+                        partsText += `• Inbox එකටම ලබා ගැනීමට මෙම මැසේජ් එකට *si* ලෙස රිප්ලයි කරන්න.\n`;
                         partsText += `• Group එකකට යැවීමට මෙම මැසේජ් එකට *sg [group_name]* ලෙස රිප්ලයි කරන්න. (Ex: \`sg pro games\`)`;
 
                         fgStates.set(chatJid, { type: 'parts', links: uniqueLinks, title: selectedGame.title });
@@ -654,24 +656,33 @@ async function startBot() {
                         await sock.sendMessage(chatJid, { text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!` });
                     }
                 } else if (wasStopped) {
-                    await sock.sendMessage(chatJid, { text: `🛑 *පරිශීලකයා විසින් ක්‍රියාවලිය නැවැත්වූ නිසා Summary වාර්තාව අවලංගු කර ඇත.*` });
+                    await sock.sendMessage(chatJid, { text: `🛑 *පරිශීලකයා විසින් ක්‍රියාවලිය නැවැත්වූ නිසා Summary වාර්තාව අවලංගု කර ඇත.*` });
                 }
             }
         }
     });
 
+    // 📊 Enhanced Connection Tracking Log
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            console.log('⚠️ WARNING: QR කේතයක් ලැබුණා! ඔබගේ SESSION_ID එක කල් ඉකුත් වී ඇත (Expired). කරුණාකර අලුත් සෙෂන් එකක් සාදා ගන්න.');
+        }
+        
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
+            console.log(`❌ Connection එක වැසුණා (Status Code: ${statusCode}). නැවත සම්බන්ධ වීමට උත්සාහ කරයි...`);
+            
             if (statusCode === DisconnectReason.loggedOut || statusCode === 405) {
+                console.log('🚫 Session එක සම්පූර්ණයෙන්ම ඉවත් වී ඇත. පැරණි සෙෂන් ෆයිල් මකනවා...');
                 if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true });
                 process.exit(1); 
             } else {
                 setTimeout(() => startBot(), 5000); 
             }
         } else if (connection === 'open') {
-            console.log('🎉 RV Games Bot Connected Successfully!');
+            console.log('🎉 SUCCESS: RV Games Bot Connected Successfully to WhatsApp!');
         }
     });
 }
