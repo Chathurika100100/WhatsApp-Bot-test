@@ -1,11 +1,15 @@
 import 'dotenv/config'; 
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import pkg from '@whiskeysockets/baileys'; // 💡 CJS පැකේජ් එක ESM වලට හරියන්න මෙහෙම ඉම්පෝට් කරනවා
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
 import http from 'http'; 
 import axios from 'axios'; 
 import NodeCache from 'node-cache';
+
+// Baileys functions ටික හරියටම ගලවා ගැනීම
+const makeWASocket = pkg.default || pkg;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = pkg;
 
 // 🌐 Web Server for Railway
 const server = http.createServer((req, res) => {
@@ -17,12 +21,11 @@ server.listen(PORT, () => {
 });
 
 const authFolder = './bot_session';
-const tempFolder = './temp'; // 📂 තාවකාලික ෆයිල් සඳහා වෙනම ෆෝල්ඩර් එකක්
+const tempFolder = './temp'; 
 const activeTasks = new Map(); 
 const msgRetryCounterCache = new NodeCache();
-const fgStates = new Map(); // 🎮 FitGirl පියවරවල් ට්‍රැක් කිරීමට ස්ටේට් මැප් එකක්
+const fgStates = new Map(); 
 
-// ෆෝල්ඩර්ස් කලින්ම සාදා ගැනීම
 if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
 
 // 📂 Session ID Setup
@@ -79,7 +82,7 @@ function getExtensionFromMime(mimeType) {
     return map[mimeType] || '.bin';
 }
 
-// 📥 Downloader Core (Upgraded to accept customFileName)
+// 📥 Downloader Core
 async function handleDownloadAndUpload(url, sock, msg, sendToJid, customFileName = null) {
     const chatJid = msg.key.remoteJid;
     const progressMsg = await sock.sendMessage(chatJid, { text: `🔍 𝖱𝖵 𝖦𝖺𝗆𝖾𝗌 Bot ලින්ක් එක පරීක්ෂා කරමින් පවතී...` }, { quoted: msg });
@@ -137,7 +140,6 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, customFileName
         if (!fileName || fileName.length > 200) fileName = `RV_Games_File_${Math.floor(Math.random() * 10000)}`;
         if (!fileName.includes('.')) fileName += getExtensionFromMime(contentType);
 
-        // 💡 Custom Name එකක් ආවොත් ඒ නම පාවිච්චි කරනවා
         if (customFileName) fileName = customFileName;
 
         const totalLength = parseInt(response.headers['content-length'], 10) || 0;
@@ -274,12 +276,11 @@ async function startBot() {
         const chatJid = msg.key.remoteJid;
         const senderNumber = senderJid.split('@')[0].split(':')[0]; 
         
-        // 🔒 PRIVATE BOT SECURITY CHECK
         const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039']; 
 
         if (!allowedNumbers.includes(senderNumber)) {
             const privateMessage = 
-                `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸名𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+                `🔒 *𝚁延 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸名𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                 `❌ *Sorry, Access Denied!*\n` +
                 `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
                 `_This bot is restricted to authorized users only._\n\n` +
@@ -327,7 +328,8 @@ async function startBot() {
                 let wasStopped = false;
 
                 for (let url of urls) {
-                    const success = await handleDownloadAndUpload(url, sock, msg, targetGroupGroupJid);
+                    // 💡 මෙතන තිබ්බ ටයිපෝ එක හැදුවා (targetGroupGroupJid -> targetGroupJid)
+                    const success = await handleDownloadAndUpload(url, sock, msg, targetGroupJid);
                     if (success === 'STOPPED') { wasStopped = true; break; }
                     if (success) uploadedCount++;
                 }
@@ -418,7 +420,7 @@ async function startBot() {
             }
         }
 
-        // 5️⃣ .dc Command (Disk Cleaner)
+        // 5️⃣ .dc Command
         else if (text.trim() === '.dc') {
             const dcNotify = await sock.sendMessage(chatJid, { text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...' }, { quoted: msg });
             try {
@@ -458,7 +460,7 @@ async function startBot() {
         // 7️⃣ .menu Command 
         else if (text.trim() === '.menu') {
             const menuText = 
-                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                 `╔════════════════════╗\n` +
                 `┃   🤖 *MAIN COMMANDS MENU* \n` +
                 `╚════════════════════╝\n` +
@@ -488,7 +490,7 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
         }
 
-        // 8️⃣ 🆕 .fg Command (Step 1: Search Game)
+        // 8️⃣ .fg Command (Step 1)
         else if (text.startsWith('.fg ')) {
             const queryName = text.replace('.fg ', '').trim();
             const formattedQuery = queryName.replace(/\s+/g, '+');
@@ -501,7 +503,6 @@ async function startBot() {
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
                 });
                 
-                // FitGirl සෙවුම් ප්‍රතිඵලවල මාතෘකා සහ ලින්ක් Regex මගින් වෙන් කර ගැනීම
                 const postRegex = /<h1 class="entry-title"><a href="([^"]+)"[^>]*>([^<]+)<\/a><\/h1>/g;
                 let matches;
                 const results = [];
@@ -529,14 +530,13 @@ async function startBot() {
             }
         }
 
-        // 9️⃣ 🆕 Handling Replies for Step 2 & Step 3
+        // 9️⃣ Handling Replies for Step 2 & Step 3
         else {
             const chatState = fgStates.get(chatJid);
             if (!chatState) return;
 
             const cleanText = text.trim();
 
-            // 🛑 Step 2: User replied with a number to select the game
             if (chatState.type === 'search' && /^\d+$/.test(cleanText)) {
                 const index = parseInt(cleanText, 10) - 1;
                 if (index >= 0 && index < chatState.results.length) {
@@ -546,10 +546,9 @@ async function startBot() {
                     try {
                         const pageRes = await axios.get(selectedGame.url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
                         
-                        // FuckingFast ලින්ක්ස් පමණක් Regex මගින් උකහා ගැනීම
                         const ffRegex = /https:\/\/fuckingfast\.co\/[^\s"'>]+/g;
                         const allLinks = pageRes.data.match(ffRegex) || [];
-                        const uniqueLinks = [...new Set(allLinks)]; // Duplicate ලින්ක්ස් අයින් කිරීම
+                        const uniqueLinks = [...new Set(allLinks)]; 
 
                         if (uniqueLinks.length === 0) {
                             return await sock.sendMessage(chatJid, { text: '❌ මෙම Game එක සඳහා FuckingFast ලින්ක්ස් සොයා ගැනීමට නොහැකි විය.', edit: fetchMsg.key });
@@ -562,7 +561,7 @@ async function startBot() {
                         });
 
                         partsText += `\n📥 *බාගත කර ගැනීමට මීළඟ පියවර:*\n`;
-                        partsText += `• Inbox එකටම ලබා ගැනීමට මෙම මැසේජ් එකට *si* ලෙස රිප්ලයි කරන්න.\n`;
+                        partsText += `• Inbox එකටම ලබා ගැනීමට මෙම මැසේජ් එකට *si* ලෙස ਰිප්ලයි කරන්න.\n`;
                         partsText += `• Group එකකට යැවීමට මෙම මැසේජ් එකට *sg [group_name]* ලෙස රිප්ලයි කරන්න. (Ex: \`sg pro games\`)`;
 
                         fgStates.set(chatJid, { type: 'parts', links: uniqueLinks, title: selectedGame.title });
@@ -574,10 +573,9 @@ async function startBot() {
                 }
             }
 
-            // 🛑 Step 3: User replied 'si' or 'sg [group]' to download chunks
             else if (chatState.type === 'parts' && (cleanText.toLowerCase() === 'si' || cleanText.toLowerCase().startsWith('sg '))) {
                 const links = chatState.links;
-                let targetJid = senderJid; // Default: Inbox
+                let targetJid = senderJid; 
 
                 if (cleanText.toLowerCase().startsWith('sg ')) {
                     const targetGroupName = cleanText.substring(3).trim().toLowerCase();
@@ -601,7 +599,7 @@ async function startBot() {
                     }
                 }
 
-                fgStates.delete(chatJid); // Process එක පටන් ගත් නිසා State එක මකා දමයි
+                fgStates.delete(chatJid); 
 
                 const startTime = Date.now();
                 let uploadedCount = 0;
@@ -617,7 +615,6 @@ async function startBot() {
                     try {
                         const ffPage = await axios.get(baseUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
                         
-                        // FuckingFast පිටුවේ ඇති window.open එක ඇතුලේ තියෙන සැබෑ Direct DL Link එක ගැනීම
                         const dlMatch = ffPage.data.match(/window\.open\(['"](https:\/\/dl\.fuckingfast\.co\/dl\/[^'"]+)['"]/);
                         if (!dlMatch || !dlMatch[1]) {
                             await sock.sendMessage(chatJid, { text: `⚠️ *${partFileName}* සඳහා Direct Download Link එක සොයා ගැනීමට නොහැකි වූ නිසා මඟහරින ලදී.`, edit: bypassMsg.key });
@@ -626,7 +623,6 @@ async function startBot() {
 
                         const directDownloadUrl = dlMatch[1];
                         
-                        // තාවකාලික Bypass මැසේජ් එක මකා දමා Core Downloader එකට වැඩේ බාරදීම
                         await sock.sendMessage(chatJid, { delete: bypassMsg.key }).catch(() => {});
 
                         const result = await handleDownloadAndUpload(directDownloadUrl, sock, msg, targetJid, partFileName);
@@ -641,18 +637,17 @@ async function startBot() {
 
                 const totalTimeSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
 
-                // 📊 සියල්ල අවසානයේ Summary වාර්තාව යැවීම
                 if (uploadedCount > 0 && !wasStopped) {
                     const summaryText = 
                         `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                        `        ⚙️ 𝚁延 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                        `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
                         `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                         `┌────────────────────────\n` +
                         `│ ✅ Status: Done\n` +
                         `│ 📦 Total Parts: ${uploadedCount}\n` +
                         `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                         `└────────────────────────\n\n` +
-                        `**𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
                     await sock.sendMessage(targetJid, { text: summaryText });
                     if (targetJid !== chatJid) {
