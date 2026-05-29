@@ -170,7 +170,8 @@ async function getFitGirlDownloadLinks(gameUrl) {
         const links = [];
         const filenames = [];
 
-        const linkRegex = /https:\/\/fuckingfast\.co\/[a-zA-Z0-9_-]+#([^"'\s<>\]\]+)/g;
+        // CORRECTED REGEX — \] is literal ], \\ is literal backslash inside char class
+        const linkRegex = /https:\/\/fuckingfast\.co\/[a-zA-Z0-9_-]+#([^"'\s<>\]\\]+)/g;
         let match;
         while ((match = linkRegex.exec(chunk)) !== null) {
             const fullUrl = match[0];
