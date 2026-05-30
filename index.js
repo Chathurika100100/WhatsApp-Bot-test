@@ -8,8 +8,6 @@ import axios from 'axios';
 import NodeCache from 'node-cache';
 
 // ==================== 🔐 CRYPTO FIX FOR NODE.JS 18+ ====================
-// Baileys uses crypto internally but doesn't import it in some paths
-// We polyfill it globally before anything else loads
 import { webcrypto } from 'node:crypto';
 if (!globalThis.crypto) {
     globalThis.crypto = webcrypto;
@@ -34,6 +32,19 @@ const server = http.createServer((req, res) => {
             retries: retryCount,
             timestamp: new Date().toISOString()
         }));
+    } else if (req.url === '/clear-auth') {
+        // Manual auth clear endpoint
+        try {
+            if (fs.existsSync(authFolder)) {
+                fs.rmSync(authFolder, { recursive: true, force: true });
+                fs.mkdirSync(authFolder, { recursive: true });
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'auth cleared', message: 'Restart the service to generate new session' }));
+        } catch (e) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: e.message }));
+        }
     } else {
         res.end('RV Games Ultra Bot is Online!');
     }
@@ -42,6 +53,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🌐 Web server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    console.log(`🧹 Clear auth: http://localhost:${PORT}/clear-auth`);
 });
 
 const authFolder = './bot_session';
@@ -487,7 +499,12 @@ async function startBot() {
             msgRetryCounterCache,
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 30000,
-            emitOwnEvents: false
+            emitOwnEvents: false,
+            // FIX: Handle decrypt errors gracefully
+            shouldIgnoreJid: (jid) => {
+                // Ignore status broadcasts and other non-chat messages
+                return jid?.endsWith('@broadcast');
+            }
         });
 
         sock.ev.on('creds.update', saveCreds);
