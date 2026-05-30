@@ -6,7 +6,17 @@ import path from 'path';
 import http from 'http';
 import axios from 'axios';
 import NodeCache from 'node-cache';
-import crypto from 'node:crypto'; // FIX: crypto module for Node.js 18+
+
+// ==================== 🔐 CRYPTO FIX FOR NODE.JS 18+ ====================
+// Baileys uses crypto internally but doesn't import it in some paths
+// We polyfill it globally before anything else loads
+import { webcrypto } from 'node:crypto';
+if (!globalThis.crypto) {
+    globalThis.crypto = webcrypto;
+}
+if (!global.crypto) {
+    global.crypto = webcrypto;
+}
 
 // ==================== 🌐 WEB SERVER + HEALTH CHECK ====================
 let connectionStatus = 'initializing';
