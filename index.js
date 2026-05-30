@@ -6,6 +6,7 @@ import path from 'path';
 import http from 'http';
 import axios from 'axios';
 import NodeCache from 'node-cache';
+import crypto from 'node:crypto'; // FIX: crypto module for Node.js 18+
 
 // ==================== 🌐 WEB SERVER + HEALTH CHECK ====================
 let connectionStatus = 'initializing';
@@ -54,7 +55,6 @@ function setupSession() {
         process.exit(1);
     }
 
-    // Always overwrite creds.json with env SESSION_ID (fresh deploys need this)
     try {
         let base64String = sessionId.trim();
         if (base64String.includes(';;;')) base64String = base64String.split(';;;').pop();
@@ -62,11 +62,10 @@ function setupSession() {
         else if (base64String.includes(':')) base64String = base64String.split(':').pop();
 
         const decrypted = Buffer.from(base64String, 'base64').toString('utf-8');
-        JSON.parse(decrypted); // Validate JSON
+        JSON.parse(decrypted);
         fs.writeFileSync(credsPath, decrypted);
         console.log("✅ SESSION_ID creds.json එකට සාර්ථකව ලිව්වා");
 
-        // Log auth folder contents for debugging
         const authFiles = fs.readdirSync(authFolder);
         console.log(`📂 Auth folder files: ${authFiles.join(', ')}`);
     } catch (err) {
@@ -170,7 +169,6 @@ async function getFitGirlDownloadLinks(gameUrl) {
         const links = [];
         const filenames = [];
 
-        // CORRECTED REGEX — \] is literal ], \\ is literal backslash inside char class
         const linkRegex = /https:\/\/fuckingfast\.co\/[a-zA-Z0-9_-]+#([^"'\s<>\]\\]+)/g;
         let match;
         while ((match = linkRegex.exec(chunk)) !== null) {
@@ -466,14 +464,14 @@ async function startBot() {
             console.log(`📦 Baileys version: ${version.join('.')}`);
         } catch (e) {
             console.warn('⚠️ Could not fetch latest Baileys version, using default');
-            version = [2, 3000, 1015901307]; // Fallback version
+            version = [2, 3000, 1015901307];
         }
 
         const sock = makeWASocket({
             version,
             auth: state,
             printQRInTerminal: false,
-            logger: pino({ level: 'warn' }), // Changed from silent to warn to see errors
+            logger: pino({ level: 'warn' }),
             browser: ['RV Games Bot', 'Chrome', '1.0.0'],
             syncFullHistory: false,
             msgRetryCounterCache,
