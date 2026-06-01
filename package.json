@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --max-old-space-size=400 index.js"
   },
   "engines": {
     "node": ">=18.0.0"
