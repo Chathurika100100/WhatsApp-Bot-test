@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node --max-old-space-size=400 index.js"
-  },
+  "start": "node --expose-gc --max-old-space-size=300 index.js"
+},
   "engines": {
     "node": ">=18.0.0"
   },
