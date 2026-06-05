@@ -16,6 +16,37 @@ import NodeCache from 'node-cache';
 import * as cheerio from 'cheerio';
 
 // ═══════════════════════════════════════════════════════════
+// 🛡️ GLOBAL ERROR HANDLERS - Bad MAC / Decryption Errors
+// ═══════════════════════════════════════════════════════════
+process.on('unhandledRejection', (err) => {
+    const errMsg = err?.message || '';
+    if (
+        errMsg.includes('Bad MAC') ||
+        errMsg.includes('Failed to decrypt') ||
+        errMsg.includes('Session error') ||
+        errMsg.includes('decryptWithSessions') ||
+        errMsg.includes('Unknown session')
+    ) {
+        console.log('⚠️ Unhandled decryption error ignored.');
+        return;
+    }
+    console.error('🔴 Unhandled Rejection:', err);
+});
+
+process.on('uncaughtException', (err) => {
+    const errMsg = err?.message || '';
+    if (
+        errMsg.includes('Bad MAC') ||
+        errMsg.includes('Failed to decrypt') ||
+        errMsg.includes('Session error')
+    ) {
+        console.log('⚠️ Uncaught decryption error ignored.');
+        return;
+    }
+    console.error('🔴 Uncaught Exception:', err);
+});
+
+// ═══════════════════════════════════════════════════════════
 // 🌐 WEB SERVER FOR RAILWAY
 // ═══════════════════════════════════════════════════════════
 const server = http.createServer((req, res) => {
@@ -37,7 +68,7 @@ const messageStore = new Map();
 const groupMetadataCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
 
 function storeMessage(msg) {
-    if (msg.key && msg.key.id && msg.key.remoteJid) {
+    if (msg && msg.key && msg.key.id && msg.key.remoteJid) {
         const storeKey = `${msg.key.remoteJid}:${msg.key.id}`;
         messageStore.set(storeKey, msg);
         setTimeout(() => messageStore.delete(storeKey), 7200000);
@@ -754,505 +785,538 @@ async function startBot() {
     });
 
     // ═══════════════════════════════════════════════════════════
+    // 🛡️ SILENT ERROR HANDLER - Bad MAC / Decryption Errors
+    // ═══════════════════════════════════════════════════════════
+    sock.ev.on('error', async (err) => {
+        const errMsg = err?.message || err?.toString() || '';
+        if (
+            errMsg.includes('Bad MAC') ||
+            errMsg.includes('Failed to decrypt') ||
+            errMsg.includes('Unknown session') ||
+            errMsg.includes('decryptWithSessions') ||
+            errMsg.includes('Session error')
+        ) {
+            console.log('⚠️ Session decryption error ignored (non-fatal):', errMsg.substring(0, 80));
+            return;
+        }
+        console.error('🔴 Baileys Fatal Error:', err);
+    });
+
+    // ═══════════════════════════════════════════════════════════
     // 📨 MESSAGE HANDLER
     // ═══════════════════════════════════════════════════════════
     sock.ev.on('messages.upsert', async m => {
-        m.messages.forEach(msg => {
-            storeMessage(msg);
-        });
+        try {
+            m.messages.forEach(msg => {
+                if (msg && msg.key) storeMessage(msg);
+            });
 
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+            const msg = m.messages[0];
+            if (!msg || !msg.key) return;
+            if (!msg.message || msg.key.fromMe) return;
 
-        const text = msg.message?.conversation ||
-                     msg.message?.extendedTextMessage?.text ||
-                     msg.message?.imageMessage?.caption ||
-                     msg.message?.videoMessage?.caption ||
-                     "";
-        const trimmedText = text.trim();
+            const text = msg.message?.conversation ||
+                         msg.message?.extendedTextMessage?.text ||
+                         msg.message?.imageMessage?.caption ||
+                         msg.message?.videoMessage?.caption ||
+                         "";
+            const trimmedText = text.trim();
 
-        const senderJid = msg.key.participant || msg.key.remoteJid || "";
-        const chatJid = msg.key.remoteJid;
+            const senderJid = msg.key.participant || msg.key.remoteJid || "";
+            const chatJid = msg.key.remoteJid;
 
-        // ═══════════════════════════════════════════════════════════
-// 🔒 AUTHORIZATION CHECK (Only for commands)
-// ═══════════════════════════════════════════════════════════
-if (!isAuthorized(senderJid)) {
-    // Normal message ekak nam ignore karanna
-    if (!trimmedText.startsWith('.')) {
-        return; // Silent return - reply ekak naha
-    }
+            // ═══════════════════════════════════════════════════════════
+            // 🔒 AUTHORIZATION CHECK (Only for commands)
+            // ═══════════════════════════════════════════════════════════
+            if (!isAuthorized(senderJid)) {
+                // Normal message ekak nam ignore karanna
+                if (!trimmedText.startsWith('.')) {
+                    return; // Silent return - reply ekak naha
+                }
 
-    // Command ekak nam Access Denied yawanawa
-    const privateMessage =
-        `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
-        `❌ *Sorry, Access Denied!*\n` +
-        `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
-        `_This bot is restricted to authorized users only._\n\n` +
-        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                // Command ekak nam Access Denied yawanawa
+                const privateMessage =
+                    `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+                    `❌ *Sorry, Access Denied!*\n` +
+                    `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
+                    `_This bot is restricted to authorized users only._\n\n` +
+                    `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
-    return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
-}
-
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        const urls = text.match(urlRegex) || [];
-        const storedData = userPartLinks.get(chatJid);
-
-        // ═══════════════════════════════════════════════════════════
-        // 🔢 PRIORITY 1: NUMBER REPLY (FitGirl Search Results)
-        // ═══════════════════════════════════════════════════════════
-        if (/^\d+$/.test(trimmedText) && userSearchResults.has(chatJid)) {
-            const searchData = userSearchResults.get(chatJid);
-            const selectedNum = parseInt(trimmedText);
-            const selectedResult = searchData.results.find(r => r.number === selectedNum);
-
-            if (!selectedResult) {
-                return await sock.sendMessage(chatJid, {
-                    text: `❌ වලංගු result number එකක් නොවේ. 1 සිට ${searchData.results.length} දක්වා උත්සාහ කරන්න.`
-                }, { quoted: msg });
+                return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
             }
 
-            const fetchingMsg = await sock.sendMessage(chatJid, {
-                text: `🔍 "*${selectedResult.title}*" එකේ download links සොයමින් පවතී...`
-            }, { quoted: msg });
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const urls = text.match(urlRegex) || [];
+            const storedData = userPartLinks.get(chatJid);
 
-            try {
-                let links = await extractFuckingFastLinks(selectedResult.link);
+            // ═══════════════════════════════════════════════════════════
+            // 🔢 PRIORITY 1: NUMBER REPLY (FitGirl Search Results)
+            // ═══════════════════════════════════════════════════════════
+            if (/^\d+$/.test(trimmedText) && userSearchResults.has(chatJid)) {
+                const searchData = userSearchResults.get(chatJid);
+                const selectedNum = parseInt(trimmedText);
+                const selectedResult = searchData.results.find(r => r.number === selectedNum);
 
-                if (!links || links.length === 0) {
-                    const pageResponse = await axiosInstance.get(selectedResult.link);
-                    const $ = cheerio.load(pageResponse.data);
-                    const pasteLinks = [];
-                    $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
-                        pasteLinks.push($(el).attr('href'));
-                    });
+                if (!selectedResult) {
+                    return await sock.sendMessage(chatJid, {
+                        text: `❌ වලංගු result number එකක් නොවේ. 1 සිට ${searchData.results.length} දක්වා උත්සාහ කරන්න.`
+                    }, { quoted: msg });
+                }
 
-                    if (pasteLinks.length > 0) {
-                        for (const pasteUrl of pasteLinks) {
-                            const pasteLinks2 = await extractLinksFromPaste(pasteUrl);
-                            if (pasteLinks2) {
-                                links = pasteLinks2;
-                                break;
+                const fetchingMsg = await sock.sendMessage(chatJid, {
+                    text: `🔍 "*${selectedResult.title}*" එකේ download links සොයමින් පවතී...`
+                }, { quoted: msg });
+
+                try {
+                    let links = await extractFuckingFastLinks(selectedResult.link);
+
+                    if (!links || links.length === 0) {
+                        const pageResponse = await axiosInstance.get(selectedResult.link);
+                        const $ = cheerio.load(pageResponse.data);
+                        const pasteLinks = [];
+                        $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
+                            pasteLinks.push($(el).attr('href'));
+                        });
+
+                        if (pasteLinks.length > 0) {
+                            for (const pasteUrl of pasteLinks) {
+                                const pasteLinks2 = await extractLinksFromPaste(pasteUrl);
+                                if (pasteLinks2) {
+                                    links = pasteLinks2;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                if (!links || links.length === 0) {
-                    return await sock.sendMessage(chatJid, {
-                        text: `❌ "*${selectedResult.title}*" එකේ FuckingFast links සොයාගත නොහැකි විය.\nමෙම game එකට direct links නැත හෝ site structure එක වෙනස් වී ඇත.`,
+                    if (!links || links.length === 0) {
+                        return await sock.sendMessage(chatJid, {
+                            text: `❌ "*${selectedResult.title}*" එකේ FuckingFast links සොයාගත නොහැකි විය.\nමෙම game එකට direct links නැත හෝ site structure එක වෙනස් වී ඇත.`,
+                            edit: fetchingMsg.key
+                        });
+                    }
+
+                    userPartLinks.set(chatJid, {
+                        links: links,
+                        gameTitle: selectedResult.title
+                    });
+
+                    const fileNames = links.map((url, i) => {
+                        const fileName = extractFilenameFromUrl(url);
+                        return `${i + 1}. ${fileName}`;
+                    });
+
+                    let linksText = `🎮 *${selectedResult.title}*\n\n`;
+                    linksText += `📦 *Total Parts:* ${links.length}\n\n`;
+                    linksText += `╔══════════════════════════════════════╗\n`;
+                    linksText += `┃ *Download Parts:*\n`;
+                    linksText += `╠══════════════════════════════════════╣\n`;
+
+                    fileNames.forEach(name => {
+                        const displayName = name.length > 50 ? name.substring(0, 47) + '...' : name;
+                        linksText += `┃ ${displayName}\n`;
+                    });
+
+                    linksText += `╚══════════════════════════════════════╝\n\n`;
+                    linksText += `📌 *Download all parts:*\n`;
+                    linksText += `├─ Reply \`.si\` → Inbox එකට එවයි\n`;
+                    linksText += `├─ Reply \`.sg [group name]\` → Group එකට එවයි\n`;
+                    linksText += `└─ Reply \`.stop\` → නවත්වන්න\n\n`;
+                    linksText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+                    await sock.sendMessage(chatJid, {
+                        text: linksText,
+                        edit: fetchingMsg.key
+                    });
+
+                } catch (error) {
+                    console.error('Number Reply Error:', error);
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ Links සොයාගැනීමේ දෝෂයකි: ${error.message}`,
                         edit: fetchingMsg.key
                     });
                 }
-
-                userPartLinks.set(chatJid, {
-                    links: links,
-                    gameTitle: selectedResult.title
-                });
-
-                const fileNames = links.map((url, i) => {
-                    const fileName = extractFilenameFromUrl(url);
-                    return `${i + 1}. ${fileName}`;
-                });
-
-                let linksText = `🎮 *${selectedResult.title}*\n\n`;
-                linksText += `📦 *Total Parts:* ${links.length}\n\n`;
-                linksText += `╔══════════════════════════════════════╗\n`;
-                linksText += `┃ *Download Parts:*\n`;
-                linksText += `╠══════════════════════════════════════╣\n`;
-
-                fileNames.forEach(name => {
-                    const displayName = name.length > 50 ? name.substring(0, 47) + '...' : name;
-                    linksText += `┃ ${displayName}\n`;
-                });
-
-                linksText += `╚══════════════════════════════════════╝\n\n`;
-                linksText += `📌 *Download all parts:*\n`;
-                linksText += `├─ Reply \`.si\` → Inbox එකට එවයි\n`;
-                linksText += `├─ Reply \`.sg [group name]\` → Group එකට එවයි\n`;
-                linksText += `└─ Reply \`.stop\` → නවත්වන්න\n\n`;
-                linksText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-                await sock.sendMessage(chatJid, {
-                    text: linksText,
-                    edit: fetchingMsg.key
-                });
-
-            } catch (error) {
-                console.error('Number Reply Error:', error);
-                await sock.sendMessage(chatJid, {
-                    text: `❌ Links සොයාගැනීමේ දෝෂයකි: ${error.message}`,
-                    edit: fetchingMsg.key
-                });
+                return;
             }
-            return;
-        }
 
-        // ═══════════════════════════════════════════════════════════
-        // 📥 PRIORITY 2: .si with Stored FitGirl Links (NO URLs)
-        // ═══════════════════════════════════════════════════════════
-        if (storedData && trimmedText === '.si' && urls.length === 0) {
-            await processFitGirlLinks(sock, msg, senderJid, storedData.links, storedData.gameTitle, chatJid);
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 👥 PRIORITY 3: .sg with Stored FitGirl Links (NO URLs)
-        // ═══════════════════════════════════════════════════════════
-        if (storedData && trimmedText.startsWith('.sg ') && urls.length === 0) {
-            let groupName = trimmedText.replace('.sg ', '').trim();
-            if (!groupName) {
-                return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න. උදා: .sg pro games' }, { quoted: msg });
+            // ═══════════════════════════════════════════════════════════
+            // 📥 PRIORITY 2: .si with Stored FitGirl Links (NO URLs)
+            // ═══════════════════════════════════════════════════════════
+            if (storedData && trimmedText === '.si' && urls.length === 0) {
+                await processFitGirlLinks(sock, msg, senderJid, storedData.links, storedData.gameTitle, chatJid);
+                return;
             }
-            await processFitGirlLinksGroup(sock, msg, groupName, storedData.links, storedData.gameTitle, chatJid);
-            return;
-        }
 
-        // ═══════════════════════════════════════════════════════════
-        // 🛑 PRIORITY 4: .stop Command
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText === '.stop') {
-            if (activeTasks.has(chatJid)) {
-                const task = activeTasks.get(chatJid);
-                task.controller.abort();
-                if (task.uploadInterval) clearInterval(task.uploadInterval);
-                if (task.stream) { try { task.stream.destroy(); } catch(e){} }
-                if (task.writer) { try { task.writer.destroy(); } catch(e){} }
+            // ═══════════════════════════════════════════════════════════
+            // 👥 PRIORITY 3: .sg with Stored FitGirl Links (NO URLs)
+            // ═══════════════════════════════════════════════════════════
+            if (storedData && trimmedText.startsWith('.sg ') && urls.length === 0) {
+                let groupName = trimmedText.replace('.sg ', '').trim();
+                if (!groupName) {
+                    return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න. උදා: .sg pro games' }, { quoted: msg });
+                }
+                await processFitGirlLinksGroup(sock, msg, groupName, storedData.links, storedData.gameTitle, chatJid);
+                return;
+            }
 
-                if (task.progressMsgKey) {
-                    const stoppedText = `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                                        `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
-                                        `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-                                        `🛑 *Status: Process Stopped!*\n` +
-                                        `⚠️ _දත්ත බාගත කිරීම හෝ යැවීම පරිශීලකයා විසින් නවතා දමා ඇත._\n\n` +
-                                        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-                    await sock.sendMessage(chatJid, { text: stoppedText, edit: task.progressMsgKey }).catch(() => {});
+            // ═══════════════════════════════════════════════════════════
+            // 🛑 PRIORITY 4: .stop Command
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText === '.stop') {
+                if (activeTasks.has(chatJid)) {
+                    const task = activeTasks.get(chatJid);
+                    task.controller.abort();
+                    if (task.uploadInterval) clearInterval(task.uploadInterval);
+                    if (task.stream) { try { task.stream.destroy(); } catch(e){} }
+                    if (task.writer) { try { task.writer.destroy(); } catch(e){} }
+
+                    if (task.progressMsgKey) {
+                        const stoppedText = `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+                                            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                                            `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+                                            `🛑 *Status: Process Stopped!*\n` +
+                                            `⚠️ _දත්ත බාගත කිරීම හෝ යැවීම පරිශීලකයා විසින් නවතා දමා ඇත._\n\n` +
+                                            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                        await sock.sendMessage(chatJid, { text: stoppedText, edit: task.progressMsgKey }).catch(() => {});
+                    }
+
+                    setTimeout(() => {
+                        if (task.tempFilePath && fs.existsSync(task.tempFilePath)) {
+                            try { fs.unlinkSync(task.tempFilePath); } catch (e) {}
+                        }
+                    }, 1000);
+
+                    activeTasks.delete(chatJid);
+                    await sock.sendMessage(chatJid, {
+                        text: '✅ සියලුම සක්‍රීය ඩවුන්ලෝඩ්/අප්ලෝඩ් ක්‍රියාවලීන් නතර කර දත්ත ඉවත් කරන ලදී!'
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(chatJid, {
+                        text: '❌ මේ මොහොතේ කිසිදු ෆයිල් එකක් බාගත වෙමින් පවතින්නේ නැත.'
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // ❌ BLOCK: Non-dot commands (after priority checks)
+            // ═══════════════════════════════════════════════════════════
+            if (!trimmedText.startsWith('.')) return;
+
+            // ═══════════════════════════════════════════════════════════
+            // 🎮 .fg COMMAND - FitGirl Repacks Search
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText.startsWith('.fg ')) {
+                const gameName = trimmedText.replace('.fg ', '').trim();
+                if (!gameName) {
+                    return await sock.sendMessage(chatJid, {
+                        text: '❌ කරුණාකර game එකේ නම ලබා දෙන්න.\nඋදා: `.fg Far Cry 3`'
+                    }, { quoted: msg });
                 }
 
-                setTimeout(() => {
-                    if (task.tempFilePath && fs.existsSync(task.tempFilePath)) {
-                        try { fs.unlinkSync(task.tempFilePath); } catch (e) {}
+                const searchingMsg = await sock.sendMessage(chatJid, {
+                    text: `🔍 *FitGirl Repacks* වලින් "*${gameName}*" සොයමින් පවතී...`
+                }, { quoted: msg });
+
+                try {
+                    const results = await searchFitGirl(gameName);
+
+                    if (!results || results.length === 0) {
+                        return await sock.sendMessage(chatJid, {
+                            text: `❌ "*${gameName}*" සඳහා FitGirl Repacks වලින් results නැත.\nවෙනත් නමකින් උත්සාහ කරන්න.`,
+                            edit: searchingMsg.key
+                        });
                     }
-                }, 1000);
 
-                activeTasks.delete(chatJid);
-                await sock.sendMessage(chatJid, {
-                    text: '✅ සියලුම සක්‍රීය ඩවුන්ලෝඩ්/අප්ලෝඩ් ක්‍රියාවලීන් නතර කර දත්ත ඉවත් කරන ලදී!'
-                }, { quoted: msg });
-            } else {
-                await sock.sendMessage(chatJid, {
-                    text: '❌ මේ මොහොතේ කිසිදු ෆයිල් එකක් බාගත වෙමින් පවතින්නේ නැත.'
-                }, { quoted: msg });
-            }
-            return;
-        }
+                    userSearchResults.set(chatJid, {
+                        results: results,
+                        timestamp: Date.now()
+                    });
 
-        // ═══════════════════════════════════════════════════════════
-        // ❌ BLOCK: Non-dot commands (after priority checks)
-        // ═══════════════════════════════════════════════════════════
-        if (!trimmedText.startsWith('.')) return;
+                    let resultsText = `🎮 *FitGirl Repacks Search Results*\n\n`;
+                    resultsText += `🔍 *Query:* "${gameName}"\n`;
+                    resultsText += `📊 *Found:* ${results.length} results\n\n`;
+                    resultsText += `╔══════════════════════════════════════╗\n`;
 
-        // ═══════════════════════════════════════════════════════════
-        // 🎮 .fg COMMAND - FitGirl Repacks Search
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText.startsWith('.fg ')) {
-            const gameName = trimmedText.replace('.fg ', '').trim();
-            if (!gameName) {
-                return await sock.sendMessage(chatJid, {
-                    text: '❌ කරුණාකර game එකේ නම ලබා දෙන්න.\nඋදා: `.fg Far Cry 3`'
-                }, { quoted: msg });
-            }
+                    results.forEach((r, i) => {
+                        resultsText += `┃ *${r.number}.* ${r.title}\n`;
+                        resultsText += `┃ 📅 ${r.date}\n`;
+                        resultsText += `┃ 📝 ${r.excerpt}\n`;
+                        if (i < results.length - 1) resultsText += `┃ ──────────────────────────────────\n`;
+                    });
 
-            const searchingMsg = await sock.sendMessage(chatJid, {
-                text: `🔍 *FitGirl Repacks* වලින් "*${gameName}*" සොයමින් පවතී...`
-            }, { quoted: msg });
+                    resultsText += `╚══════════════════════════════════════╝\n\n`;
+                    resultsText += `📌 *Reply with the number* to get download links.\n`;
+                    resultsText += `📌 උදා: reply with \`1\` for first result\n\n`;
+                    resultsText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
-            try {
-                const results = await searchFitGirl(gameName);
+                    await sock.sendMessage(chatJid, {
+                        text: resultsText,
+                        edit: searchingMsg.key
+                    });
 
-                if (!results || results.length === 0) {
-                    return await sock.sendMessage(chatJid, {
-                        text: `❌ "*${gameName}*" සඳහා FitGirl Repacks වලින් results නැත.\nවෙනත් නමකින් උත්සාහ කරන්න.`,
+                } catch (error) {
+                    console.error('.fg Error:', error);
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ FitGirl search දෝෂයකි: ${error.message}`,
                         edit: searchingMsg.key
                     });
                 }
-
-                userSearchResults.set(chatJid, {
-                    results: results,
-                    timestamp: Date.now()
-                });
-
-                let resultsText = `🎮 *FitGirl Repacks Search Results*\n\n`;
-                resultsText += `🔍 *Query:* "${gameName}"\n`;
-                resultsText += `📊 *Found:* ${results.length} results\n\n`;
-                resultsText += `╔══════════════════════════════════════╗\n`;
-
-                results.forEach((r, i) => {
-                    resultsText += `┃ *${r.number}.* ${r.title}\n`;
-                    resultsText += `┃ 📅 ${r.date}\n`;
-                    resultsText += `┃ 📝 ${r.excerpt}\n`;
-                    if (i < results.length - 1) resultsText += `┃ ──────────────────────────────────\n`;
-                });
-
-                resultsText += `╚══════════════════════════════════════╝\n\n`;
-                resultsText += `📌 *Reply with the number* to get download links.\n`;
-                resultsText += `📌 උදා: reply with \`1\` for first result\n\n`;
-                resultsText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-                await sock.sendMessage(chatJid, {
-                    text: resultsText,
-                    edit: searchingMsg.key
-                });
-
-            } catch (error) {
-                console.error('.fg Error:', error);
-                await sock.sendMessage(chatJid, {
-                    text: `❌ FitGirl search දෝෂයකි: ${error.message}`,
-                    edit: searchingMsg.key
-                });
-            }
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 📥 .si COMMAND (with URLs in text)
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText.startsWith('.si ')) {
-            if (urls.length === 0) {
-                return await sock.sendMessage(chatJid, {
-                    text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.'
-                }, { quoted: msg });
+                return;
             }
 
-            for (let url of urls) {
-                const res = await handleDownloadAndUpload(url, sock, msg, senderJid);
-                if (res === 'STOPPED') break;
-            }
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 👥 .sg COMMAND (with URLs in text)
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText.startsWith('.sg ')) {
-            if (urls.length === 0) {
-                return await sock.sendMessage(chatJid, {
-                    text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.'
-                }, { quoted: msg });
-            }
-
-            let groupName = trimmedText.replace('.sg ', '');
-            urls.forEach(u => groupName = groupName.replace(u, ''));
-            groupName = groupName.trim().toLowerCase();
-
-            if (!groupName) {
-                return await sock.sendMessage(chatJid, {
-                    text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න.'
-                }, { quoted: msg });
-            }
-
-            const initialNotify = await sock.sendMessage(chatJid, {
-                text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...`
-            });
-
-            try {
-                const groups = await sock.groupFetchAllParticipating();
-                let targetGroupJid = null;
-
-                for (let jid in groups) {
-                    if (groups[jid].subject.toLowerCase().includes(groupName)) {
-                        targetGroupJid = jid; break;
-                    }
-                }
-
-                if (!targetGroupJid) {
+            // ═══════════════════════════════════════════════════════════
+            // 📥 .si COMMAND (with URLs in text)
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText.startsWith('.si ')) {
+                if (urls.length === 0) {
                     return await sock.sendMessage(chatJid, {
-                        text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.'
-                    });
+                        text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.'
+                    }, { quoted: msg });
                 }
-
-                const startTime = Date.now();
-                let uploadedCount = 0;
-                let wasStopped = false;
 
                 for (let url of urls) {
-                    const success = await handleDownloadAndUpload(url, sock, msg, targetGroupJid);
-                    if (success === 'STOPPED') {
-                        wasStopped = true;
-                        break;
-                    }
-                    if (success && success.success) uploadedCount++;
+                    const res = await handleDownloadAndUpload(url, sock, msg, senderJid);
+                    if (res === 'STOPPED') break;
+                }
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // 👥 .sg COMMAND (with URLs in text)
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText.startsWith('.sg ')) {
+                if (urls.length === 0) {
+                    return await sock.sendMessage(chatJid, {
+                        text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.'
+                    }, { quoted: msg });
                 }
 
-                const endTime = Date.now();
-                const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
+                let groupName = trimmedText.replace('.sg ', '');
+                urls.forEach(u => groupName = groupName.replace(u, ''));
+                groupName = groupName.trim().toLowerCase();
 
-                if (uploadedCount > 0 && !wasStopped) {
-                    const summaryText =
-                        `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                        `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
-                        `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-                        `┌────────────────────────\n` +
-                        `│ ✅ Status: Done\n` +
-                        `│ 📦 Total Parts: ${uploadedCount}\n` +
-                        `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
-                        `└────────────────────────\n\n` +
-                        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-                    await sock.sendMessage(targetGroupJid, { text: summaryText });
-                    await sock.sendMessage(chatJid, {
-                        text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!`,
-                        edit: initialNotify.key
-                    });
-                } else if (wasStopped) {
-                    await sock.sendMessage(chatJid, {
-                        text: `🛑 *ක්‍රියාවලිය නවත්වන ලද නිසා ගෲප් වාර්තා යැවීම අවලංගු කරන ලදී.*`,
-                        edit: initialNotify.key
-                    });
+                if (!groupName) {
+                    return await sock.sendMessage(chatJid, {
+                        text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න.'
+                    }, { quoted: msg });
                 }
 
-            } catch (error) {
-                await sock.sendMessage(chatJid, {
-                    text: '❌ ගෲප් එකට යැවීමේදී දෝෂයක් ඇති විය.'
+                const initialNotify = await sock.sendMessage(chatJid, {
+                    text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...`
                 });
-            }
-            return;
-        }
 
-        // ═══════════════════════════════════════════════════════════
-        // ⚡ .speed COMMAND
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText === '.speed') {
-            await sock.sendMessage(chatJid, {
-                text: '⚡ RV Games සර්වර් වේගය පරීක්ෂා කරමින් පවතී...'
-            }, { quoted: msg });
-            try {
-                const pingStart = Date.now();
-                await axios.get('https://google.com');
-                const pingTime = Date.now() - pingStart;
+                try {
+                    const groups = await sock.groupFetchAllParticipating();
+                    let targetGroupJid = null;
 
-                const dlStart = Date.now();
-                await axios.get('https://httpbin.org/bytes/1048576', { responseType: 'arraybuffer' });
-                const dlEnd = Date.now();
-                const dlDuration = (dlEnd - dlStart) / 1000;
-                const downloadSpeed = (8 / dlDuration).toFixed(2);
-
-                const payload = 'A'.repeat(1048576);
-                const ulStart = Date.now();
-                await axios.post('https://httpbin.org/post', payload, {
-                    headers: { 'Content-Type': 'text/plain' }
-                });
-                const ulEnd = Date.now();
-                const ulDuration = (ulEnd - ulStart) / 1000;
-                const uploadSpeed = (8 / ulDuration).toFixed(2);
-
-                const speedText = `*⚡ RV GAMES SERVER SPEED* 🎮\n\n` +
-                                  `🏓 *Ping:* \`${pingTime} ms\`\n` +
-                                  `📥 *Download Speed:* \`${downloadSpeed} Mbps\`\n` +
-                                  `📤 *Upload Speed:* \`${uploadSpeed} Mbps\`\n\n` +
-                                  `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-                await sock.sendMessage(chatJid, { text: speedText }, { quoted: msg });
-            } catch (error) {
-                console.error("Speed test Error:", error.message);
-                await sock.sendMessage(chatJid, {
-                    text: `❌ Speed test දෝෂයකි: ${error.message}`
-                }, { quoted: msg });
-            }
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 🧹 .dc COMMAND (Disk Cleaner)
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText === '.dc') {
-            await sock.sendMessage(chatJid, {
-                text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...'
-            }, { quoted: msg });
-            try {
-                const directory = './';
-                const files = fs.readdirSync(directory);
-                let deletedCount = 0;
-                let freedSpace = 0;
-
-                files.forEach(file => {
-                    const filePath = path.join(directory, file);
-                    const stat = fs.statSync(filePath);
-                    const protectedFiles = ['index.js', 'package.json', 'package-lock.json', 'node_modules', 'bot_session', '.env', '.gitignore', '.git'];
-
-                    if (!protectedFiles.includes(file) && stat.isFile()) {
-                        freedSpace += stat.size;
-                        fs.unlinkSync(filePath);
-                        deletedCount++;
+                    for (let jid in groups) {
+                        if (groups[jid].subject.toLowerCase().includes(groupName)) {
+                            targetGroupJid = jid; break;
+                        }
                     }
-                });
 
-                const freedMB = (freedSpace / (1024 * 1024)).toFixed(2);
+                    if (!targetGroupJid) {
+                        return await sock.sendMessage(chatJid, {
+                            text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.'
+                        });
+                    }
 
-                const clearText = `*🧹 RV GAMES DISK CLEANER* ⚙️\n\n` +
-                                  `✅ *Status:* Disk Cleaned Successfully!\n` +
-                                  `🗑️ *Removed Files:* \`${deletedCount} files\`\n` +
-                                  `📦 *Freed Space:* \`${freedMB} MB\`\n\n` +
-                                  `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                    const startTime = Date.now();
+                    let uploadedCount = 0;
+                    let wasStopped = false;
 
-                await sock.sendMessage(chatJid, { text: clearText }, { quoted: msg });
-            } catch (error) {
-                console.error("Disk Cleaner Error:", error.message);
-                await sock.sendMessage(chatJid, {
-                    text: `❌ Disk එක Clear කිරීමේදී දෝෂයක් ඇති විය: ${error.message}`
-                }, { quoted: msg });
+                    for (let url of urls) {
+                        const success = await handleDownloadAndUpload(url, sock, msg, targetGroupJid);
+                        if (success === 'STOPPED') {
+                            wasStopped = true;
+                            break;
+                        }
+                        if (success && success.success) uploadedCount++;
+                    }
+
+                    const endTime = Date.now();
+                    const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
+
+                    if (uploadedCount > 0 && !wasStopped) {
+                        const summaryText =
+                            `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+                            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                            `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+                            `┌────────────────────────\n` +
+                            `│ ✅ Status: Done\n` +
+                            `│ 📦 Total Parts: ${uploadedCount}\n` +
+                            `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
+                            `└────────────────────────\n\n` +
+                            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+                        await sock.sendMessage(targetGroupJid, { text: summaryText });
+                        await sock.sendMessage(chatJid, {
+                            text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!`,
+                            edit: initialNotify.key
+                        });
+                    } else if (wasStopped) {
+                        await sock.sendMessage(chatJid, {
+                            text: `🛑 *ක්‍රියාවලිය නවත්වන ලද නිසා ගෲප් වාර්තා යැවීම අවලංගු කරන ලදී.*`,
+                            edit: initialNotify.key
+                        });
+                    }
+
+                } catch (error) {
+                    await sock.sendMessage(chatJid, {
+                        text: '❌ ගෲප් එකට යැවීමේදී දෝෂයක් ඇති විය.'
+                    });
+                }
+                return;
             }
-            return;
-        }
 
-        // ═══════════════════════════════════════════════════════════
-        // 💀 .crash COMMAND
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText === '.crash') {
-            await sock.sendMessage(chatJid, {
-                text: '💀 *RV Games Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._'
-            }, { quoted: msg });
-            console.log("💀 Manual Crash triggered: Bot stopped.");
-            setTimeout(() => {
-                process.exit(0);
-            }, 1000);
-            return;
-        }
+            // ═══════════════════════════════════════════════════════════
+            // ⚡ .speed COMMAND
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText === '.speed') {
+                await sock.sendMessage(chatJid, {
+                    text: '⚡ RV Games සර්වර් වේගය පරීක්ෂා කරමින් පවතී...'
+                }, { quoted: msg });
+                try {
+                    const pingStart = Date.now();
+                    await axios.get('https://google.com');
+                    const pingTime = Date.now() - pingStart;
 
-        // ═══════════════════════════════════════════════════════════
-        // 📜 .menu COMMAND
-        // ═══════════════════════════════════════════════════════════
-        if (trimmedText === '.menu') {
-            const menuText =
-                `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
-                `╔════════════════════╗\n` +
-                `┃    🤖 *MAIN COMMANDS MENU* \n` +
-                `╚════════════════════╝\n` +
-                `┃ 🎮 *.fg [game name]*\n` +
-                `┃ ↳ _FitGirl Repacks වලින් game search කරයි._\n` +
-                `┃\n` +
-                `┃ 📥 *.si [link 1] [link 2]*\n` +
-                `┃ ↳ _ලින්ක් කීපයක් වුවද එකවර Inbox එවයි._\n` +
-                `┃\n` +
-                `┃ 👥 *.sg [group name] [link 1] [link 2]*\n` +
-                `┃ ↳ _අදාළ ගෲප් එක වෙත ෆයිල්ස් සහ Summary වාර්තාව යවයි._\n` +
-                `┃\n` +
-                `┃ 🛑 *.stop*\n` +
-                `┃ ↳ _සිදු වෙමින් පවතින ඕනෑම ක්‍රියාවලියක් නතර කරයි._\n` +
-                `┃\n` +
-                `┃ ⚡ *.speed*\n` +
-                `┃ ↳ _සර්වර් එකේ සැබෑ DL වේගය මනියි._\n` +
-                `┃\n` +
-                `┃ 🧹 *.dc*\n` +
-                `┃ ↳ _සර්වර් එකේ ඇති තාවකාලික ෆයිල් මකා දමයි._\n` +
-                `┃\n` +
-                `┃ 📜 *.menu*\n` +
-                `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
-                `╚════════════════════╝\n\n` +
-                `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
+                    const dlStart = Date.now();
+                    await axios.get('https://httpbin.org/bytes/1048576', { responseType: 'arraybuffer' });
+                    const dlEnd = Date.now();
+                    const dlDuration = (dlEnd - dlStart) / 1000;
+                    const downloadSpeed = (8 / dlDuration).toFixed(2);
 
-            await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
-            return;
+                    const payload = 'A'.repeat(1048576);
+                    const ulStart = Date.now();
+                    await axios.post('https://httpbin.org/post', payload, {
+                        headers: { 'Content-Type': 'text/plain' }
+                    });
+                    const ulEnd = Date.now();
+                    const ulDuration = (ulEnd - ulStart) / 1000;
+                    const uploadSpeed = (8 / ulDuration).toFixed(2);
+
+                    const speedText = `*⚡ RV GAMES SERVER SPEED* 🎮\n\n` +
+                                      `🏓 *Ping:* \`${pingTime} ms\`\n` +
+                                      `📥 *Download Speed:* \`${downloadSpeed} Mbps\`\n` +
+                                      `📤 *Upload Speed:* \`${uploadSpeed} Mbps\`\n\n` +
+                                      `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+                    await sock.sendMessage(chatJid, { text: speedText }, { quoted: msg });
+                } catch (error) {
+                    console.error("Speed test Error:", error.message);
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ Speed test දෝෂයකි: ${error.message}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // 🧹 .dc COMMAND (Disk Cleaner)
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText === '.dc') {
+                await sock.sendMessage(chatJid, {
+                    text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...'
+                }, { quoted: msg });
+                try {
+                    const directory = './';
+                    const files = fs.readdirSync(directory);
+                    let deletedCount = 0;
+                    let freedSpace = 0;
+
+                    files.forEach(file => {
+                        const filePath = path.join(directory, file);
+                        const stat = fs.statSync(filePath);
+                        const protectedFiles = ['index.js', 'package.json', 'package-lock.json', 'node_modules', 'bot_session', '.env', '.gitignore', '.git'];
+
+                        if (!protectedFiles.includes(file) && stat.isFile()) {
+                            freedSpace += stat.size;
+                            fs.unlinkSync(filePath);
+                            deletedCount++;
+                        }
+                    });
+
+                    const freedMB = (freedSpace / (1024 * 1024)).toFixed(2);
+
+                    const clearText = `*🧹 RV GAMES DISK CLEANER* ⚙️\n\n` +
+                                      `✅ *Status:* Disk Cleaned Successfully!\n` +
+                                      `🗑️ *Removed Files:* \`${deletedCount} files\`\n` +
+                                      `📦 *Freed Space:* \`${freedMB} MB\`\n\n` +
+                                      `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+                    await sock.sendMessage(chatJid, { text: clearText }, { quoted: msg });
+                } catch (error) {
+                    console.error("Disk Cleaner Error:", error.message);
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ Disk එක Clear කිරීමේදී දෝෂයක් ඇති විය: ${error.message}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // 💀 .crash COMMAND
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText === '.crash') {
+                await sock.sendMessage(chatJid, {
+                    text: '💀 *RV Games Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._'
+                }, { quoted: msg });
+                console.log("💀 Manual Crash triggered: Bot stopped.");
+                setTimeout(() => {
+                    process.exit(0);
+                }, 1000);
+                return;
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // 📜 .menu COMMAND
+            // ═══════════════════════════════════════════════════════════
+            if (trimmedText === '.menu') {
+                const menuText =
+                    `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                    `╔════════════════════╗\n` +
+                    `┃    🤖 *MAIN COMMANDS MENU* \n` +
+                    `╚════════════════════╝\n` +
+                    `┃ 🎮 *.fg [game name]*\n` +
+                    `┃ ↳ _FitGirl Repacks වලින් game search කරයි._\n` +
+                    `┃\n` +
+                    `┃ 📥 *.si [link 1] [link 2]*\n` +
+                    `┃ ↳ _ලින්ක් කීපයක් වුවද එකවර Inbox එවයි._\n` +
+                    `┃\n` +
+                    `┃ 👥 *.sg [group name] [link 1] [link 2]*\n` +
+                    `┃ ↳ _අදාළ ගෲප් එක වෙත ෆයිල්ස් සහ Summary වාර්තාව යවයි._\n` +
+                    `┃\n` +
+                    `┃ 🛑 *.stop*\n` +
+                    `┃ ↳ _සිදු වෙමින් පවතින ඕනෑම ක්‍රියාවලියක් නතර කරයි._\n` +
+                    `┃\n` +
+                    `┃ ⚡ *.speed*\n` +
+                    `┃ ↳ _සර්වර් එකේ සැබෑ DL වේගය මනියි._\n` +
+                    `┃\n` +
+                    `┃ 🧹 *.dc*\n` +
+                    `┃ ↳ _සර්වර් එකේ ඇති තාවකාලික ෆයිල් මකා දමයි._\n` +
+                    `┃\n` +
+                    `┃ 📜 *.menu*\n` +
+                    `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
+                    `╚════════════════════╝\n\n` +
+                    `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
+
+                await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
+                return;
+            }
+        } catch (err) {
+            const errMsg = err?.message || '';
+            if (
+                errMsg.includes('Bad MAC') ||
+                errMsg.includes('Failed to decrypt') ||
+                errMsg.includes('decrypt') ||
+                errMsg.includes('Session error')
+            ) {
+                console.log('⚠️ Message decryption failed, silently ignoring...');
+                return;
+            }
+            console.error('❌ Message Handler Error:', err);
         }
     });
 
