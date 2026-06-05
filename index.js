@@ -1,5 +1,11 @@
 import 'dotenv/config';
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore,
+    Browsers
+} from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
@@ -20,6 +26,29 @@ server.listen(PORT, () => {
 const authFolder = './bot_session';
 const activeTasks = new Map();
 const msgRetryCounterCache = new NodeCache();
+
+// ═══════════════════════════════════════════════════════════
+// 💾 MESSAGE STORE FOR RETRY HANDLING (CRITICAL FIX)
+// ═══════════════════════════════════════════════════════════
+const messageStore = new Map();
+const groupMetadataCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
+
+function storeMessage(msg) {
+    if (msg.key && msg.key.id && msg.key.remoteJid) {
+        const storeKey = `${msg.key.remoteJid}:${msg.key.id}`;
+        messageStore.set(storeKey, msg);
+        // Clean after 2 hours
+        setTimeout(() => messageStore.delete(storeKey), 7200000);
+    }
+}
+
+async function getMessageFromStore(key) {
+    if (!key || !key.remoteJid || !key.id) return undefined;
+    const storeKey = `${key.remoteJid}:${key.id}`;
+    const msg = messageStore.get(storeKey);
+    console.log(`🔍 getMessage lookup: ${storeKey} → ${msg ? 'FOUND' : 'NOT FOUND'}`);
+    return msg?.message || undefined;
+}
 
 // 📂 Session ID Setup
 function setupSession() {
@@ -130,7 +159,6 @@ async function extractFuckingFastLinks(gameUrl) {
         const response = await axiosInstance.get(gameUrl);
         const $ = cheerio.load(response.data);
 
-        // Find the FuckingFast section
         let fuckingFastSection = null;
         $('li, div, p').each((i, el) => {
             const text = $(el).text();
@@ -140,7 +168,6 @@ async function extractFuckingFastLinks(gameUrl) {
         });
 
         if (!fuckingFastSection) {
-            // Try alternative: look for any link containing fuckingfast.co
             const allLinks = [];
             $('a[href*="fuckingfast.co"], a[href*="fuckingfast"]').each((i, el) => {
                 const href = $(el).attr('href');
@@ -152,10 +179,7 @@ async function extractFuckingFastLinks(gameUrl) {
             return null;
         }
 
-        // Look for "Click to show direct links" button or hidden links
         const links = [];
-
-        // Method 1: Direct links in the section
         fuckingFastSection.find('a[href*="fuckingfast.co"]').each((i, el) => {
             const href = $(el).attr('href');
             if (href && !links.includes(href)) {
@@ -163,7 +187,6 @@ async function extractFuckingFastLinks(gameUrl) {
             }
         });
 
-        // Method 2: Look for paste links (paste.fitgirl-repacks.site)
         $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
             const href = $(el).attr('href');
             if (href && !links.includes(href)) {
@@ -171,7 +194,6 @@ async function extractFuckingFastLinks(gameUrl) {
             }
         });
 
-        // Method 3: Look for any fuckingfast links anywhere on page
         if (links.length === 0) {
             $('a').each((i, el) => {
                 const href = $(el).attr('href');
@@ -181,15 +203,14 @@ async function extractFuckingFastLinks(gameUrl) {
             });
         }
 
-        const cleanedLinks = cleanLinks(links);
-        return cleanedLinks.length > 0 ? cleanedLinks : null;
+        return links.length > 0 ? links : null;
     } catch (error) {
         console.error('Extract Links Error:', error.message);
         return null;
     }
 }
 
-// 🎮 Step 2b: Extract links from paste page (paste.fitgirl-repacks.site)
+// 🎮 Step 2b: Extract links from paste page
 async function extractLinksFromPaste(pasteUrl) {
     try {
         const response = await axiosInstance.get(pasteUrl);
@@ -203,7 +224,6 @@ async function extractLinksFromPaste(pasteUrl) {
             }
         });
 
-        // Also check raw text for links
         const pageText = $('body').text();
         const urlRegex = /https?:\/\/fuckingfast\.co\/[^\s\]\)<>"]+/g;
         const foundUrls = pageText.match(urlRegex) || [];
@@ -211,8 +231,7 @@ async function extractLinksFromPaste(pasteUrl) {
             if (!links.includes(url)) links.push(url);
         });
 
-        const cleanedLinks = cleanLinks(links);
-        return cleanedLinks.length > 0 ? cleanedLinks : null;
+        return links.length > 0 ? links : null;
     } catch (error) {
         console.error('Paste Extract Error:', error.message);
         return null;
@@ -222,18 +241,12 @@ async function extractLinksFromPaste(pasteUrl) {
 // 🎮 Step 3: Extract Real Download URL from fuckingfast.co page
 async function extractRealDownloadUrl(fuckingFastUrl) {
     try {
-        const response = await axiosInstance.get(fuckingFastUrl, {
-            maxRedirects: 5,
-        });
+        const response = await axiosInstance.get(fuckingFastUrl, { maxRedirects: 5 });
         const html = response.data;
 
-        // Method 1: Look for window.open in script tags
         const windowOpenMatch = html.match(/window\.open\(["'](https?:\/\/[^"']+)["']/);
-        if (windowOpenMatch) {
-            return windowOpenMatch[1];
-        }
+        if (windowOpenMatch) return windowOpenMatch[1];
 
-        // Method 2: Look for download() function with atob
         const atobMatch = html.match(/atob\(["']([^"']+)["']\)/);
         if (atobMatch) {
             try {
@@ -242,24 +255,18 @@ async function extractRealDownloadUrl(fuckingFastUrl) {
             } catch (e) {}
         }
 
-        // Method 3: Look for any dl.fuckingfast.co links
         const dlMatch = html.match(/https:\/\/dl\.fuckingfast\.co\/[^"'\s\]\)<>]+/);
-        if (dlMatch) {
-            return dlMatch[0];
-        }
+        if (dlMatch) return dlMatch[0];
 
-        // Method 4: Parse with cheerio and look for scripts
         const $ = cheerio.load(html);
         let realUrl = null;
 
         $('script').each((i, el) => {
             const scriptContent = $(el).html();
             if (scriptContent) {
-                // Look for window.open
                 const woMatch = scriptContent.match(/window\.open\(["'](https?:\/\/[^"']+)["']/);
                 if (woMatch && !realUrl) realUrl = woMatch[1];
 
-                // Look for atob decoded URLs
                 const atobMatch2 = scriptContent.match(/atob\(["']([A-Za-z0-9+/=]+)["']\)/);
                 if (atobMatch2 && !realUrl) {
                     try {
@@ -268,7 +275,6 @@ async function extractRealDownloadUrl(fuckingFastUrl) {
                     } catch (e) {}
                 }
 
-                // Look for any https URLs in download context
                 const urlMatch = scriptContent.match(/https:\/\/dl\.fuckingfast\.co\/[^"'\s\]\)<>]+/);
                 if (urlMatch && !realUrl) realUrl = urlMatch[0];
             }
@@ -281,13 +287,12 @@ async function extractRealDownloadUrl(fuckingFastUrl) {
     }
 }
 
-// 🎮 Extract filename from fuckingfast URL (after #)
+// 🎮 Extract filename from fuckingfast URL
 function extractFilenameFromUrl(url) {
     const hashIndex = url.indexOf('#');
     if (hashIndex !== -1) {
         return url.substring(hashIndex + 1);
     }
-    // Fallback: extract from path
     try {
         const urlObj = new URL(url);
         const pathParts = urlObj.pathname.split('/');
@@ -297,41 +302,21 @@ function extractFilenameFromUrl(url) {
     }
 }
 
-// ✅ Validate if a fuckingfast link is a real game part
+// ✅ Validate game part links
 function isValidGamePartLink(url) {
-    // Must be a proper URL starting with fuckingfast.co
-    if (!url || !url.startsWith('https://fuckingfast.co/')) {
-        return false;
-    }
-
-    // Must have a # with a filename after it
+    if (!url || !url.startsWith('https://fuckingfast.co/')) return false;
     const hashIndex = url.indexOf('#');
-    if (hashIndex === -1) {
-        return false; // No filename after # - probably bogus
-    }
-
+    if (hashIndex === -1) return false;
     const fileName = url.substring(hashIndex + 1);
-
-    // Filename must have a valid game file extension
     const validExtensions = ['.rar', '.bin', '.zip', '.7z', '.iso', '.dmg', '.exe', '.zipx'];
     const hasValidExt = validExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
-
-    if (!hasValidExt) {
-        return false; // No valid extension - probably bogus
-    }
-
-    // Filename should not be too short (bogus hashes are usually random)
-    if (fileName.length < 5) {
-        return false;
-    }
-
+    if (!hasValidExt) return false;
+    if (fileName.length < 5) return false;
     return true;
 }
 
-// ✅ Clean and deduplicate links
 function cleanLinks(links) {
     if (!links || !Array.isArray(links)) return [];
-
     const seen = new Set();
     return links.filter(link => {
         if (!link || typeof link !== 'string') return false;
@@ -432,9 +417,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
         let lastUpdateTime = Date.now();
 
         tempFilePath = path.join('./', `${Date.now()}_${fileName}`);
-        const writer = fs.createWriteStream(tempFilePath, {
-            highWaterMark: 64 * 1024
-        });
+        const writer = fs.createWriteStream(tempFilePath, { highWaterMark: 64 * 1024 });
 
         if (activeTasks.has(chatJid)) {
             const task = activeTasks.get(chatJid);
@@ -444,16 +427,12 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
 
         response.data.on('data', async (chunk) => {
             if (controller.signal.aborted) return;
-
             downloadedLength += chunk.length;
             const now = Date.now();
             if (now - lastUpdateTime > 2000) {
                 lastUpdateTime = now;
-
                 if (controller.signal.aborted) return;
-
                 const dlMB = (downloadedLength / (1024 * 1024)).toFixed(1);
-
                 if (totalLength) {
                     const percent = ((downloadedLength / totalLength) * 100).toFixed(1);
                     const totMB = (totalLength / (1024 * 1024)).toFixed(1);
@@ -558,50 +537,59 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
 
-    // 💾 Message store for retry handling (fixes "Waiting for this message")
-    const messageStore = {};
+    // 🔑 CRITICAL: Use cacheable signal key store for proper encryption
+    const logger = pino({ level: 'silent' });
 
     const sock = makeWASocket({
         version,
-        auth: state,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, logger)
+        },
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' }),
-        browser: ['RV Games Bot', 'Chrome', '1.0.0'],
+        logger,
+        browser: Browsers.macOS('Desktop'),
         syncFullHistory: false,
         msgRetryCounterCache,
         markOnlineOnConnect: true,
-        // 🔑 CRITICAL: Handle message retries for decryption
-        getMessage: async (key) => {
-            const msg = messageStore[key.id];
-            if (msg) {
-                console.log(`🔄 Message retry handled for: ${key.id}`);
-                return msg;
-            }
-            return undefined;
-        }
+        // 🔑 CRITICAL: Message retry handling
+        getMessage: getMessageFromStore,
+        // 🔑 CRITICAL: Group metadata caching
+        cachedGroupMetadata: async (jid) => groupMetadataCache.get(jid)
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔄 Handle message updates (retry requests, receipts)
-    sock.ev.on('messages.update', async updates => {
+    // 🔄 Group metadata cache updates
+    sock.ev.on('groups.upsert', (groups) => {
+        for (const group of groups) {
+            groupMetadataCache.set(group.id, group);
+        }
+    });
+
+    sock.ev.on('groups.update', async (updates) => {
         for (const update of updates) {
-            const { key, update: updateData } = update;
-            // Log retry requests for debugging
-            if (updateData?.messageStubType === 1 || updateData?.status === 2) {
-                console.log(`🔄 Retry/Status update for message: ${key.id}`);
+            if (update.id) {
+                try {
+                    const metadata = await sock.groupMetadata(update.id);
+                    groupMetadataCache.set(update.id, metadata);
+                } catch (e) {}
             }
         }
     });
 
+    sock.ev.on('group-participants.update', async (event) => {
+        try {
+            const metadata = await sock.groupMetadata(event.id);
+            groupMetadataCache.set(event.id, metadata);
+        } catch (e) {}
+    });
+
+    // 💾 Store ALL messages for retry support
     sock.ev.on('messages.upsert', async m => {
-        // 💾 Store all messages for retry handling
+        // Store ALL messages (incoming AND outgoing)
         m.messages.forEach(msg => {
-            if (msg.key.id && msg.message) {
-                messageStore[msg.key.id] = msg.message;
-                // Clean old messages after 1 hour to save memory
-                setTimeout(() => delete messageStore[msg.key.id], 3600000);
-            }
+            storeMessage(msg);
         });
 
         const msg = m.messages[0];
@@ -725,11 +713,11 @@ async function startBot() {
                     edit: fetchingMsg.key
                 });
             }
-            return; // ✅ IMPORTANT: Stop here so we don't fall through
+            return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 📥 PRIORITY 2: .si with Stored FitGirl Links (NO URLs in text)
+        // 📥 PRIORITY 2: .si with Stored FitGirl Links (NO URLs)
         // ═══════════════════════════════════════════════════════════
         if (storedData && trimmedText === '.si' && urls.length === 0) {
             await processFitGirlLinks(sock, msg, senderJid, storedData.links, storedData.gameTitle, chatJid);
@@ -737,7 +725,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 👥 PRIORITY 3: .sg with Stored FitGirl Links (NO URLs in text)
+        // 👥 PRIORITY 3: .sg with Stored FitGirl Links (NO URLs)
         // ═══════════════════════════════════════════════════════════
         if (storedData && trimmedText.startsWith('.sg ') && urls.length === 0) {
             let groupName = trimmedText.replace('.sg ', '').trim();
