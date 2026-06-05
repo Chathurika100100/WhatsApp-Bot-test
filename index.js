@@ -696,17 +696,17 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 📥 PRIORITY 2: .si with Stored FitGirl Links (no URLs needed)
+        // 📥 PRIORITY 2: .si with Stored FitGirl Links (NO URLs in text)
         // ═══════════════════════════════════════════════════════════
-        if (storedData && trimmedText === '.si') {
+        if (storedData && trimmedText === '.si' && urls.length === 0) {
             await processFitGirlLinks(sock, msg, senderJid, storedData.links, storedData.gameTitle, chatJid);
             return;
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 👥 PRIORITY 3: .sg with Stored FitGirl Links
+        // 👥 PRIORITY 3: .sg with Stored FitGirl Links (NO URLs in text)
         // ═══════════════════════════════════════════════════════════
-        if (storedData && trimmedText.startsWith('.sg ')) {
+        if (storedData && trimmedText.startsWith('.sg ') && urls.length === 0) {
             let groupName = trimmedText.replace('.sg ', '').trim();
             if (!groupName) {
                 return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න. උදා: .sg pro games' }, { quoted: msg });
