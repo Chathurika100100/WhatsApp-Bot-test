@@ -181,7 +181,8 @@ async function extractFuckingFastLinks(gameUrl) {
             });
         }
 
-        return links.length > 0 ? links : null;
+        const cleanedLinks = cleanLinks(links);
+        return cleanedLinks.length > 0 ? cleanedLinks : null;
     } catch (error) {
         console.error('Extract Links Error:', error.message);
         return null;
@@ -210,7 +211,8 @@ async function extractLinksFromPaste(pasteUrl) {
             if (!links.includes(url)) links.push(url);
         });
 
-        return links.length > 0 ? links : null;
+        const cleanedLinks = cleanLinks(links);
+        return cleanedLinks.length > 0 ? cleanedLinks : null;
     } catch (error) {
         console.error('Paste Extract Error:', error.message);
         return null;
@@ -293,6 +295,52 @@ function extractFilenameFromUrl(url) {
     } catch (e) {
         return 'unknown_file';
     }
+}
+
+// ✅ Validate if a fuckingfast link is a real game part
+function isValidGamePartLink(url) {
+    // Must be a proper URL starting with fuckingfast.co
+    if (!url || !url.startsWith('https://fuckingfast.co/')) {
+        return false;
+    }
+
+    // Must have a # with a filename after it
+    const hashIndex = url.indexOf('#');
+    if (hashIndex === -1) {
+        return false; // No filename after # - probably bogus
+    }
+
+    const fileName = url.substring(hashIndex + 1);
+
+    // Filename must have a valid game file extension
+    const validExtensions = ['.rar', '.bin', '.zip', '.7z', '.iso', '.dmg', '.exe', '.zipx'];
+    const hasValidExt = validExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
+
+    if (!hasValidExt) {
+        return false; // No valid extension - probably bogus
+    }
+
+    // Filename should not be too short (bogus hashes are usually random)
+    if (fileName.length < 5) {
+        return false;
+    }
+
+    return true;
+}
+
+// ✅ Clean and deduplicate links
+function cleanLinks(links) {
+    if (!links || !Array.isArray(links)) return [];
+
+    const seen = new Set();
+    return links.filter(link => {
+        if (!link || typeof link !== 'string') return false;
+        const trimmed = link.trim();
+        if (seen.has(trimmed)) return false;
+        if (!isValidGamePartLink(trimmed)) return false;
+        seen.add(trimmed);
+        return true;
+    });
 }
 
 // ═══════════════════════════════════════════════════════════
