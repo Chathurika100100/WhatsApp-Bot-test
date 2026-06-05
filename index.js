@@ -558,6 +558,9 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
 
+    // 💾 Message store for retry handling (fixes "Waiting for this message")
+    const messageStore = {};
+
     const sock = makeWASocket({
         version,
         auth: state,
@@ -565,12 +568,42 @@ async function startBot() {
         logger: pino({ level: 'silent' }),
         browser: ['RV Games Bot', 'Chrome', '1.0.0'],
         syncFullHistory: false,
-        msgRetryCounterCache
+        msgRetryCounterCache,
+        markOnlineOnConnect: true,
+        // 🔑 CRITICAL: Handle message retries for decryption
+        getMessage: async (key) => {
+            const msg = messageStore[key.id];
+            if (msg) {
+                console.log(`🔄 Message retry handled for: ${key.id}`);
+                return msg;
+            }
+            return undefined;
+        }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
+    // 🔄 Handle message updates (retry requests, receipts)
+    sock.ev.on('messages.update', async updates => {
+        for (const update of updates) {
+            const { key, update: updateData } = update;
+            // Log retry requests for debugging
+            if (updateData?.messageStubType === 1 || updateData?.status === 2) {
+                console.log(`🔄 Retry/Status update for message: ${key.id}`);
+            }
+        }
+    });
+
     sock.ev.on('messages.upsert', async m => {
+        // 💾 Store all messages for retry handling
+        m.messages.forEach(msg => {
+            if (msg.key.id && msg.message) {
+                messageStore[msg.key.id] = msg.message;
+                // Clean old messages after 1 hour to save memory
+                setTimeout(() => delete messageStore[msg.key.id], 3600000);
+            }
+        });
+
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
