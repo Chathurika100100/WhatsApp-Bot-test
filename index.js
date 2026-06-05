@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import makeWASocket, { 
+import { 
+    makeWASocket, 
     useMultiFileAuthState, 
     DisconnectReason, 
     fetchLatestBaileysVersion,
@@ -14,7 +15,9 @@ import axios from 'axios';
 import NodeCache from 'node-cache';
 import * as cheerio from 'cheerio';
 
-// 🌐 Web Server for Railway
+// ═══════════════════════════════════════════════════════════
+// 🌐 WEB SERVER FOR RAILWAY
+// ═══════════════════════════════════════════════════════════
 const server = http.createServer((req, res) => {
     res.end('RV Games Ultra Bot is Online!');
 });
@@ -28,7 +31,7 @@ const activeTasks = new Map();
 const msgRetryCounterCache = new NodeCache();
 
 // ═══════════════════════════════════════════════════════════
-// 💾 MESSAGE STORE FOR RETRY HANDLING (CRITICAL FIX)
+// 💾 MESSAGE STORE FOR RETRY HANDLING
 // ═══════════════════════════════════════════════════════════
 const messageStore = new Map();
 const groupMetadataCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
@@ -37,7 +40,6 @@ function storeMessage(msg) {
     if (msg.key && msg.key.id && msg.key.remoteJid) {
         const storeKey = `${msg.key.remoteJid}:${msg.key.id}`;
         messageStore.set(storeKey, msg);
-        // Clean after 2 hours
         setTimeout(() => messageStore.delete(storeKey), 7200000);
     }
 }
@@ -50,7 +52,9 @@ async function getMessageFromStore(key) {
     return msg?.message || undefined;
 }
 
-// 📂 Session ID Setup
+// ═══════════════════════════════════════════════════════════
+// 📂 SESSION ID SETUP
+// ═══════════════════════════════════════════════════════════
 function setupSession() {
     const credsPath = path.join(authFolder, 'creds.json');
     if (fs.existsSync(credsPath)) return console.log("📂 පැරණි සෙෂන් දත්ත සොයාගන්නා ලදී...");
@@ -79,7 +83,9 @@ function setupSession() {
 }
 setupSession();
 
-// 📊 Progress Bar
+// ═══════════════════════════════════════════════════════════
+// 📊 UTILITIES
+// ═══════════════════════════════════════════════════════════
 function getProgressBar(percent) {
     const total = 10;
     const filled = Math.round((percent / 100) * total);
@@ -87,7 +93,6 @@ function getProgressBar(percent) {
     return '▰'.repeat(filled) + '▱'.repeat(empty);
 }
 
-// 🗂️ Extension Generator
 function getExtensionFromMime(mimeType) {
     const map = {
         'application/zip': '.zip',
@@ -107,9 +112,18 @@ function getExtensionFromMime(mimeType) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🔥 FITGIRL REPACKS SCRAPER FUNCTIONS
+// 🔒 AUTHORIZED NUMBERS LIST
 // ═══════════════════════════════════════════════════════════
+const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039'];
 
+function isAuthorized(senderJid) {
+    const senderNumber = senderJid.split('@')[0].split(':')[0];
+    return allowedNumbers.includes(senderNumber);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔥 FITGIRL REPACKS SCRAPER
+// ═══════════════════════════════════════════════════════════
 const axiosInstance = axios.create({
     timeout: 30000,
     headers: {
@@ -121,7 +135,6 @@ const axiosInstance = axios.create({
     }
 });
 
-// 🎮 Step 1: Search FitGirl Repacks
 async function searchFitGirl(gameName) {
     try {
         const searchUrl = `https://fitgirl-repacks.site/?s=${encodeURIComponent(gameName)}`;
@@ -153,7 +166,6 @@ async function searchFitGirl(gameName) {
     }
 }
 
-// 🎮 Step 2: Extract FuckingFast Links from Game Page
 async function extractFuckingFastLinks(gameUrl) {
     try {
         const response = await axiosInstance.get(gameUrl);
@@ -210,7 +222,6 @@ async function extractFuckingFastLinks(gameUrl) {
     }
 }
 
-// 🎮 Step 2b: Extract links from paste page
 async function extractLinksFromPaste(pasteUrl) {
     try {
         const response = await axiosInstance.get(pasteUrl);
@@ -238,7 +249,6 @@ async function extractLinksFromPaste(pasteUrl) {
     }
 }
 
-// 🎮 Step 3: Extract Real Download URL from fuckingfast.co page
 async function extractRealDownloadUrl(fuckingFastUrl) {
     try {
         const response = await axiosInstance.get(fuckingFastUrl, { maxRedirects: 5 });
@@ -287,7 +297,6 @@ async function extractRealDownloadUrl(fuckingFastUrl) {
     }
 }
 
-// 🎮 Extract filename from fuckingfast URL
 function extractFilenameFromUrl(url) {
     const hashIndex = url.indexOf('#');
     if (hashIndex !== -1) {
@@ -302,7 +311,6 @@ function extractFilenameFromUrl(url) {
     }
 }
 
-// ✅ Validate game part links
 function isValidGamePartLink(url) {
     if (!url || !url.startsWith('https://fuckingfast.co/')) return false;
     const hashIndex = url.indexOf('#');
@@ -329,9 +337,8 @@ function cleanLinks(links) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 📥 HEAVY LIFT DOWNLOADER & UPLOADER (RAM OPTIMIZED)
+// 📥 DOWNLOADER & UPLOADER
 // ═══════════════════════════════════════════════════════════
-
 async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverride = null) {
     const chatJid = msg.key.remoteJid;
     const progressMsg = await sock.sendMessage(chatJid, {
@@ -527,9 +534,174 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
 }
 
 // ═══════════════════════════════════════════════════════════
+// 🤖 FITGIRL LINKS PROCESSORS
+// ═══════════════════════════════════════════════════════════
+async function processFitGirlLinks(sock, msg, sendToJid, links, gameTitle, chatJid) {
+    const startTime = Date.now();
+    let uploadedCount = 0;
+    let wasStopped = false;
+    const totalParts = links.length;
+
+    const initialMsg = await sock.sendMessage(chatJid, {
+        text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n\n⏳ Downloading parts one by one...\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`
+    });
+
+    for (let i = 0; i < links.length; i++) {
+        const fuckingFastUrl = links[i];
+        const fileName = extractFilenameFromUrl(fuckingFastUrl);
+
+        await sock.sendMessage(chatJid, {
+            text: `📥 Part ${i + 1}/${totalParts}: *${fileName}*\n⏳ Real download URL සොයමින්...`,
+            edit: initialMsg.key
+        }).catch(() => {});
+
+        const realUrl = await extractRealDownloadUrl(fuckingFastUrl);
+        if (!realUrl) {
+            await sock.sendMessage(chatJid, {
+                text: `❌ Part ${i + 1}/${totalParts} (${fileName}): Real download URL සොයාගත නොහැකි විය.`
+            });
+            continue;
+        }
+
+        const result = await handleDownloadAndUpload(realUrl, sock, msg, sendToJid, fileName);
+
+        if (result === 'STOPPED') {
+            wasStopped = true;
+            break;
+        }
+
+        if (result && result.success) {
+            uploadedCount++;
+        }
+
+        if (i < links.length - 1) {
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    const endTime = Date.now();
+    const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
+
+    if (uploadedCount > 0 && !wasStopped) {
+        const summaryText =
+            `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+            `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+            `┌────────────────────────\n` +
+            `│ ✅ Status: Done\n` +
+            `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
+            `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
+            `└────────────────────────\n\n` +
+            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+        await sock.sendMessage(chatJid, { text: summaryText });
+    } else if (wasStopped) {
+        await sock.sendMessage(chatJid, {
+            text: `🛑 *ක්‍රියාවලිය නවත්වන ලදී.*\n✅ Uploaded: ${uploadedCount}/${totalParts}`
+        });
+    }
+
+    userPartLinks.delete(chatJid);
+}
+
+async function processFitGirlLinksGroup(sock, msg, groupName, links, gameTitle, chatJid) {
+    const initialNotify = await sock.sendMessage(chatJid, {
+        text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...`
+    });
+
+    try {
+        const groups = await sock.groupFetchAllParticipating();
+        let targetGroupJid = null;
+
+        for (let jid in groups) {
+            if (groups[jid].subject.toLowerCase().includes(groupName.toLowerCase())) {
+                targetGroupJid = jid; break;
+            }
+        }
+
+        if (!targetGroupJid) {
+            return await sock.sendMessage(chatJid, {
+                text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.'
+            });
+        }
+
+        const startTime = Date.now();
+        let uploadedCount = 0;
+        let wasStopped = false;
+        const totalParts = links.length;
+
+        await sock.sendMessage(chatJid, {
+            text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n👥 *Target:* ${groups[targetGroupJid].subject}\n\n⏳ Downloading parts one by one...`,
+            edit: initialNotify.key
+        });
+
+        for (let i = 0; i < links.length; i++) {
+            const fuckingFastUrl = links[i];
+            const fileName = extractFilenameFromUrl(fuckingFastUrl);
+
+            const realUrl = await extractRealDownloadUrl(fuckingFastUrl);
+            if (!realUrl) {
+                await sock.sendMessage(chatJid, {
+                    text: `❌ Part ${i + 1}/${totalParts} (${fileName}): Real download URL සොයාගත නොහැකි විය.`
+                });
+                continue;
+            }
+
+            const result = await handleDownloadAndUpload(realUrl, sock, msg, targetGroupJid, fileName);
+
+            if (result === 'STOPPED') {
+                wasStopped = true;
+                break;
+            }
+
+            if (result && result.success) {
+                uploadedCount++;
+            }
+
+            if (i < links.length - 1) {
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+
+        const endTime = Date.now();
+        const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
+
+        if (uploadedCount > 0 && !wasStopped) {
+            const summaryText =
+                `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
+                `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+                `┌────────────────────────\n` +
+                `│ ✅ Status: Done\n` +
+                `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
+                `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
+                `└────────────────────────\n\n` +
+                `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+            await sock.sendMessage(targetGroupJid, { text: summaryText });
+            await sock.sendMessage(chatJid, {
+                text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!`,
+                edit: initialNotify.key
+            });
+        } else if (wasStopped) {
+            await sock.sendMessage(chatJid, {
+                text: `🛑 *ක්‍රියාවලිය නවත්වන ලද නිසා ගෲප් වාර්තා යැවීම අවලංගු කරන ලදී.*\n✅ Uploaded: ${uploadedCount}/${totalParts}`,
+                edit: initialNotify.key
+            });
+        }
+
+        userPartLinks.delete(chatJid);
+
+    } catch (error) {
+        await sock.sendMessage(chatJid, {
+            text: '❌ ගෲප් එකට යැවීමේදී දෝෂයක් ඇති විය.'
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // 🤖 MAIN BOT START
 // ═══════════════════════════════════════════════════════════
-
 const userSearchResults = new Map();
 const userPartLinks = new Map();
 
@@ -537,7 +709,6 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
 
-    // 🔑 CRITICAL: Use cacheable signal key store for proper encryption
     const logger = pino({ level: 'silent' });
 
     const sock = makeWASocket({
@@ -552,15 +723,12 @@ async function startBot() {
         syncFullHistory: false,
         msgRetryCounterCache,
         markOnlineOnConnect: true,
-        // 🔑 CRITICAL: Message retry handling
         getMessage: getMessageFromStore,
-        // 🔑 CRITICAL: Group metadata caching
         cachedGroupMetadata: async (jid) => groupMetadataCache.get(jid)
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔄 Group metadata cache updates
     sock.ev.on('groups.upsert', (groups) => {
         for (const group of groups) {
             groupMetadataCache.set(group.id, group);
@@ -585,9 +753,10 @@ async function startBot() {
         } catch (e) {}
     });
 
-    // 💾 Store ALL messages for retry support
+    // ═══════════════════════════════════════════════════════════
+    // 📨 MESSAGE HANDLER
+    // ═══════════════════════════════════════════════════════════
     sock.ev.on('messages.upsert', async m => {
-        // Store ALL messages (incoming AND outgoing)
         m.messages.forEach(msg => {
             storeMessage(msg);
         });
@@ -605,13 +774,10 @@ async function startBot() {
         const senderJid = msg.key.participant || msg.key.remoteJid || "";
         const chatJid = msg.key.remoteJid;
 
-        // 🔒 PRIVATE BOT SECURITY CHECK
-        const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039'];
-        const senderNumber = senderJid.split('@')[0].split(':')[0];
-
-        console.log(`[SECURITY CHECK] Command received from: ${senderNumber} | Text: "${trimmedText}"`);
-
-        if (!allowedNumbers.includes(senderNumber)) {
+        // ═══════════════════════════════════════════════════════════
+        // 🔒 AUTHORIZATION CHECK
+        // ═══════════════════════════════════════════════════════════
+        if (!isAuthorized(senderJid)) {
             const privateMessage =
                 `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                 `❌ *Sorry, Access Denied!*\n` +
@@ -1083,175 +1249,6 @@ async function startBot() {
             return;
         }
     });
-
-    // ═══════════════════════════════════════════════════════════
-    // 🤖 FITGIRL LINKS PROCESSOR (Inbox)
-    // ═══════════════════════════════════════════════════════════
-    async function processFitGirlLinks(sock, msg, sendToJid, links, gameTitle, chatJid) {
-        const startTime = Date.now();
-        let uploadedCount = 0;
-        let wasStopped = false;
-        const totalParts = links.length;
-
-        const initialMsg = await sock.sendMessage(chatJid, {
-            text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n\n⏳ Downloading parts one by one...\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`
-        });
-
-        for (let i = 0; i < links.length; i++) {
-            const fuckingFastUrl = links[i];
-            const fileName = extractFilenameFromUrl(fuckingFastUrl);
-
-            await sock.sendMessage(chatJid, {
-                text: `📥 Part ${i + 1}/${totalParts}: *${fileName}*\n⏳ Real download URL සොයමින්...`,
-                edit: initialMsg.key
-            }).catch(() => {});
-
-            const realUrl = await extractRealDownloadUrl(fuckingFastUrl);
-            if (!realUrl) {
-                await sock.sendMessage(chatJid, {
-                    text: `❌ Part ${i + 1}/${totalParts} (${fileName}): Real download URL සොයාගත නොහැකි විය.`
-                });
-                continue;
-            }
-
-            const result = await handleDownloadAndUpload(realUrl, sock, msg, sendToJid, fileName);
-
-            if (result === 'STOPPED') {
-                wasStopped = true;
-                break;
-            }
-
-            if (result && result.success) {
-                uploadedCount++;
-            }
-
-            if (i < links.length - 1) {
-                await new Promise(r => setTimeout(r, 2000));
-            }
-        }
-
-        const endTime = Date.now();
-        const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
-        if (uploadedCount > 0 && !wasStopped) {
-            const summaryText =
-                `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
-                `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-                `┌────────────────────────\n` +
-                `│ ✅ Status: Done\n` +
-                `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
-                `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
-                `└────────────────────────\n\n` +
-                `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-            await sock.sendMessage(chatJid, { text: summaryText });
-        } else if (wasStopped) {
-            await sock.sendMessage(chatJid, {
-                text: `🛑 *ක්‍රියාවලිය නවත්වන ලදී.*\n✅ Uploaded: ${uploadedCount}/${totalParts}`
-            });
-        }
-
-        userPartLinks.delete(chatJid);
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // 🤖 FITGIRL LINKS PROCESSOR (Group)
-    // ═══════════════════════════════════════════════════════════
-    async function processFitGirlLinksGroup(sock, msg, groupName, links, gameTitle, chatJid) {
-        const initialNotify = await sock.sendMessage(chatJid, {
-            text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...`
-        });
-
-        try {
-            const groups = await sock.groupFetchAllParticipating();
-            let targetGroupJid = null;
-
-            for (let jid in groups) {
-                if (groups[jid].subject.toLowerCase().includes(groupName.toLowerCase())) {
-                    targetGroupJid = jid; break;
-                }
-            }
-
-            if (!targetGroupJid) {
-                return await sock.sendMessage(chatJid, {
-                    text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.'
-                });
-            }
-
-            const startTime = Date.now();
-            let uploadedCount = 0;
-            let wasStopped = false;
-            const totalParts = links.length;
-
-            await sock.sendMessage(chatJid, {
-                text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n👥 *Target:* ${groups[targetGroupJid].subject}\n\n⏳ Downloading parts one by one...`,
-                edit: initialNotify.key
-            });
-
-            for (let i = 0; i < links.length; i++) {
-                const fuckingFastUrl = links[i];
-                const fileName = extractFilenameFromUrl(fuckingFastUrl);
-
-                const realUrl = await extractRealDownloadUrl(fuckingFastUrl);
-                if (!realUrl) {
-                    await sock.sendMessage(chatJid, {
-                        text: `❌ Part ${i + 1}/${totalParts} (${fileName}): Real download URL සොයාගත නොහැකි විය.`
-                    });
-                    continue;
-                }
-
-                const result = await handleDownloadAndUpload(realUrl, sock, msg, targetGroupJid, fileName);
-
-                if (result === 'STOPPED') {
-                    wasStopped = true;
-                    break;
-                }
-
-                if (result && result.success) {
-                    uploadedCount++;
-                }
-
-                if (i < links.length - 1) {
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-            }
-
-            const endTime = Date.now();
-            const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
-            if (uploadedCount > 0 && !wasStopped) {
-                const summaryText =
-                    `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                    `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
-                    `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
-                    `┌────────────────────────\n` +
-                    `│ ✅ Status: Done\n` +
-                    `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
-                    `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
-                    `└────────────────────────\n\n` +
-                    `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
-
-                await sock.sendMessage(targetGroupJid, { text: summaryText });
-                await sock.sendMessage(chatJid, {
-                    text: `✅ සියලුම Parts (${uploadedCount}) ගෲප් එකට සාර්ථකව යවා Summary වාර්තාවද ලබා දෙන ලදී!`,
-                    edit: initialNotify.key
-                });
-            } else if (wasStopped) {
-                await sock.sendMessage(chatJid, {
-                    text: `🛑 *ක්‍රියාවලිය නවත්වන ලද නිසා ගෲප් වාර්තා යැවීම අවලංගු කරන ලදී.*\n✅ Uploaded: ${uploadedCount}/${totalParts}`,
-                    edit: initialNotify.key
-                });
-            }
-
-            userPartLinks.delete(chatJid);
-
-        } catch (error) {
-            await sock.sendMessage(chatJid, {
-                text: '❌ ගෲප් එකට යැවීමේදී දෝෂයක් ඇති විය.'
-            });
-        }
-    }
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
