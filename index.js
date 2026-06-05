@@ -775,18 +775,24 @@ async function startBot() {
         const chatJid = msg.key.remoteJid;
 
         // ═══════════════════════════════════════════════════════════
-        // 🔒 AUTHORIZATION CHECK
-        // ═══════════════════════════════════════════════════════════
-        if (!isAuthorized(senderJid)) {
-            const privateMessage =
-                `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
-                `❌ *Sorry, Access Denied!*\n` +
-                `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
-                `_This bot is restricted to authorized users only._\n\n` +
-                `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+// 🔒 AUTHORIZATION CHECK (Only for commands)
+// ═══════════════════════════════════════════════════════════
+if (!isAuthorized(senderJid)) {
+    // Normal message ekak nam ignore karanna
+    if (!trimmedText.startsWith('.')) {
+        return; // Silent return - reply ekak naha
+    }
 
-            return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
-        }
+    // Command ekak nam Access Denied yawanawa
+    const privateMessage =
+        `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+        `❌ *Sorry, Access Denied!*\n` +
+        `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
+        `_This bot is restricted to authorized users only._\n\n` +
+        `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+
+    return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
+}
 
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = text.match(urlRegex) || [];
