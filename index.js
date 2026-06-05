@@ -202,51 +202,32 @@ async function extractFuckingFastLinks(gameUrl) {
         const response = await axiosInstance.get(gameUrl);
         const $ = cheerio.load(response.data);
 
-        let fuckingFastSection = null;
-        $('li, div, p').each((i, el) => {
-            const text = $(el).text();
-            if (text.includes('FuckingFast') || text.includes('fuckingfast')) {
-                fuckingFastSection = $(el);
+        // Step 1: Find direct FuckingFast links from anchor tags only
+        const directLinks = [];
+        $('a[href*="fuckingfast.co"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href && href.includes('fuckingfast.co') && !directLinks.includes(href)) {
+                directLinks.push(href.trim());
             }
         });
 
-        if (!fuckingFastSection) {
-            const allLinks = [];
-            $('a[href*="fuckingfast.co"], a[href*="fuckingfast"]').each((i, el) => {
-                const href = $(el).attr('href');
-                if (href && href.includes('fuckingfast.co')) {
-                    allLinks.push(href);
-                }
-            });
-            if (allLinks.length > 0) return allLinks;
-            return null;
+        // If direct links found, return them cleaned
+        if (directLinks.length > 0) {
+            return cleanLinks(directLinks);
         }
 
-        const links = [];
-        fuckingFastSection.find('a[href*="fuckingfast.co"]').each((i, el) => {
-            const href = $(el).attr('href');
-            if (href && !links.includes(href)) {
-                links.push(href);
-            }
-        });
-
+        // Step 2: No direct links? Look for paste links only
+        const pasteLinks = [];
         $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && !links.includes(href)) {
-                links.push(href);
+            if (href && !pasteLinks.includes(href)) {
+                pasteLinks.push(href.trim());
             }
         });
 
-        if (links.length === 0) {
-            $('a').each((i, el) => {
-                const href = $(el).attr('href');
-                if (href && href.includes('fuckingfast.co') && !links.includes(href)) {
-                    links.push(href);
-                }
-            });
-        }
+        // Return paste links to be processed separately
+        return { pasteLinks: pasteLinks };
 
-        return links.length > 0 ? links : null;
     } catch (error) {
         console.error('Extract Links Error:', error.message);
         return null;
@@ -259,21 +240,29 @@ async function extractLinksFromPaste(pasteUrl) {
         const $ = cheerio.load(response.data);
 
         const links = [];
-        $('a[href*="fuckingfast.co"], li').each((i, el) => {
-            const href = $(el).attr('href') || $(el).text();
+
+        // Only get href from actual anchor tags - NO li text()
+        $('a[href*="fuckingfast.co"]').each((i, el) => {
+            const href = $(el).attr('href');
             if (href && href.includes('fuckingfast.co') && !links.includes(href)) {
                 links.push(href.trim());
             }
         });
 
+        // Regex from full page text - but validate it's a real URL with hash
         const pageText = $('body').text();
-        const urlRegex = /https?:\/\/fuckingfast\.co\/[^\s\]\)<>"]+/g;
+        const urlRegex = /https?:\/\/fuckingfast\.co\/[a-zA-Z0-9#._-]+/g;
         const foundUrls = pageText.match(urlRegex) || [];
+
         foundUrls.forEach(url => {
-            if (!links.includes(url)) links.push(url);
+            // Only add if it looks like a real download link (has #filename)
+            if (url.includes('#') && !links.includes(url)) {
+                links.push(url);
+            }
         });
 
-        return links.length > 0 ? links : null;
+        return links.length > 0 ? cleanLinks(links) : null;
+
     } catch (error) {
         console.error('Paste Extract Error:', error.message);
         return null;
@@ -868,26 +857,26 @@ async function startBot() {
                 }, { quoted: msg });
 
                 try {
-                    let links = await extractFuckingFastLinks(selectedResult.link);
+                    let result = await extractFuckingFastLinks(selectedResult.link);
+                    let links = [];
 
-                    if (!links || links.length === 0) {
-                        const pageResponse = await axiosInstance.get(selectedResult.link);
-                        const $ = cheerio.load(pageResponse.data);
-                        const pasteLinks = [];
-                        $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
-                            pasteLinks.push($(el).attr('href'));
-                        });
-
-                        if (pasteLinks.length > 0) {
-                            for (const pasteUrl of pasteLinks) {
-                                const pasteLinks2 = await extractLinksFromPaste(pasteUrl);
-                                if (pasteLinks2) {
-                                    links = pasteLinks2;
-                                    break;
-                                }
+                    // If direct links found (array)
+                    if (Array.isArray(result) && result.length > 0) {
+                        links = result;
+                    } 
+                    // If paste links found (object with pasteLinks)
+                    else if (result && result.pasteLinks && result.pasteLinks.length > 0) {
+                        for (const pasteUrl of result.pasteLinks) {
+                            const pasteLinks2 = await extractLinksFromPaste(pasteUrl);
+                            if (pasteLinks2 && pasteLinks2.length > 0) {
+                                links = pasteLinks2;
+                                break;
                             }
                         }
                     }
+
+                    // FINAL CLEAN - Remove any invalid/bogus parts
+                    links = cleanLinks(links);
 
                     if (!links || links.length === 0) {
                         return await sock.sendMessage(chatJid, {
