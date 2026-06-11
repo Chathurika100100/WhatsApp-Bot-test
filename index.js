@@ -16,6 +16,13 @@ import NodeCache from 'node-cache';
 import * as cheerio from 'cheerio';
 
 // ═══════════════════════════════════════════════════════════
+// 🏷️ BOT CONFIGURATION - Single Source of Truth
+// ═══════════════════════════════════════════════════════════
+const BOT_NAME = process.env.BOT_NAME || 'Praveen';
+const BOT_NAME_MONO = `Praveen`; // Monospace version for styling
+const POWERED_BY = `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 ${BOT_NAME}*`;
+
+// ═══════════════════════════════════════════════════════════
 // 🛡️ GLOBAL ERROR HANDLERS - Bad MAC / Decryption Errors
 // ═══════════════════════════════════════════════════════════
 process.on('unhandledRejection', (err) => {
@@ -50,7 +57,7 @@ process.on('uncaughtException', (err) => {
 // 🌐 WEB SERVER FOR RAILWAY
 // ═══════════════════════════════════════════════════════════
 const server = http.createServer((req, res) => {
-    res.end('RV Games Ultra Bot is Online!');
+    res.end(`${BOT_NAME} Ultra Bot is Online!`);
 });
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
@@ -362,7 +369,7 @@ function cleanLinks(links) {
 async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverride = null) {
     const chatJid = msg.key.remoteJid;
     const progressMsg = await sock.sendMessage(chatJid, {
-        text: `🔍 𝖱𝖵 𝖦𝖺𝗆𝖾𝗌 Bot ලින්ක් එක පරීක්ෂා කරමින් පවතී...`
+        text: `🔍 ${BOT_NAME} Bot ලින්ක් එක පරීක්ෂා කරමින් පවතී...`
     }, { quoted: msg });
 
     const controller = new AbortController();
@@ -431,7 +438,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
         }
 
         if (!fileName || fileName.length > 200) {
-            fileName = `RV_Games_File_${Math.floor(Math.random() * 10000)}`;
+            fileName = `${BOT_NAME}_File_${Math.floor(Math.random() * 10000)}`;
         }
 
         if (!fileName.includes('.')) {
@@ -510,7 +517,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
             document: { url: tempFilePath },
             mimetype: contentType,
             fileName: fileName,
-            caption: `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`
+            caption: POWERED_BY
         });
 
         clearInterval(uploadInterval);
@@ -521,7 +528,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
         activeTasks.delete(chatJid);
 
         await sock.sendMessage(chatJid, {
-            text: `🎉 *${fileName}* සාර්ථකව යවන ලදී!\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`,
+            text: `🎉 *${fileName}* සාර්ථකව යවන ලදී!\n\n${POWERED_BY}`,
             edit: progressMsg.key
         }).catch(() => {});
 
@@ -557,13 +564,12 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
 // 🤖 FITGIRL LINKS PROCESSORS
 // ═══════════════════════════════════════════════════════════
 async function processFitGirlLinks(sock, msg, sendToJid, links, gameTitle, chatJid) {
-    const startTime = Date.now();
     let uploadedCount = 0;
     let wasStopped = false;
     const totalParts = links.length;
 
     const initialMsg = await sock.sendMessage(chatJid, {
-        text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n\n⏳ Downloading parts one by one...\n\n*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`
+        text: `🎮 *${gameTitle}*\n📦 *Total Parts:* ${totalParts}\n\n⏳ Downloading parts one by one...\n\n${POWERED_BY}`
     });
 
     for (let i = 0; i < links.length; i++) {
@@ -599,20 +605,16 @@ async function processFitGirlLinks(sock, msg, sendToJid, links, gameTitle, chatJ
         }
     }
 
-    const endTime = Date.now();
-    const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
     if (uploadedCount > 0 && !wasStopped) {
         const summaryText =
             `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+            `      ⚙️ ${BOT_NAME_MONO} ⚙️\n` +
             `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
             `┌────────────────────────\n` +
             `│ ✅ Status: Done\n` +
             `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
-            `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
             `└────────────────────────\n\n` +
-            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+            `${POWERED_BY}`;
 
         await sock.sendMessage(chatJid, { text: summaryText });
     } else if (wasStopped) {
@@ -645,7 +647,6 @@ async function processFitGirlLinksGroup(sock, msg, groupName, links, gameTitle, 
             });
         }
 
-        const startTime = Date.now();
         let uploadedCount = 0;
         let wasStopped = false;
         const totalParts = links.length;
@@ -683,20 +684,16 @@ async function processFitGirlLinksGroup(sock, msg, groupName, links, gameTitle, 
             }
         }
 
-        const endTime = Date.now();
-        const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
         if (uploadedCount > 0 && !wasStopped) {
             const summaryText =
                 `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                `      ⚙️ ${BOT_NAME_MONO} ⚙️\n` +
                 `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                 `┌────────────────────────\n` +
                 `│ ✅ Status: Done\n` +
                 `│ 📦 Total Parts: ${uploadedCount}/${totalParts}\n` +
-                `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                 `└────────────────────────\n\n` +
-                `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                `${POWERED_BY}`;
 
             await sock.sendMessage(targetGroupJid, { text: summaryText });
             await sock.sendMessage(chatJid, {
@@ -825,11 +822,11 @@ async function startBot() {
 
                 // Command ekak nam Access Denied yawanawa
                 const privateMessage =
-                    `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
+                    `🔒 *${BOT_NAME} 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                     `❌ *Sorry, Access Denied!*\n` +
                     `ඔබට මෙම බොට්ගේ විධාන (Commands) භාවිතා කිරීමට අවසර නැත.\n\n` +
                     `_This bot is restricted to authorized users only._\n\n` +
-                    `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                    `${POWERED_BY}`;
 
                 return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
             }
@@ -911,7 +908,7 @@ async function startBot() {
                     linksText += `├─ Reply \`.si\` → Inbox එකට එවයි\n`;
                     linksText += `├─ Reply \`.sg [group name]\` → Group එකට එවයි\n`;
                     linksText += `└─ Reply \`.stop\` → නවත්වන්න\n\n`;
-                    linksText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                    linksText += `${POWERED_BY}`;
 
                     await sock.sendMessage(chatJid, {
                         text: linksText,
@@ -961,11 +958,11 @@ async function startBot() {
 
                     if (task.progressMsgKey) {
                         const stoppedText = `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                                            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                                            `      ⚙️ ${BOT_NAME_MONO} ⚙️\n` +
                                             `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                                             `🛑 *Status: Process Stopped!*\n` +
                                             `⚠️ _දත්ත බාගත කිරීම හෝ යැවීම පරිශීලකයා විසින් නවතා දමා ඇත._\n\n` +
-                                            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                                            `${POWERED_BY}`;
                         await sock.sendMessage(chatJid, { text: stoppedText, edit: task.progressMsgKey }).catch(() => {});
                     }
 
@@ -999,7 +996,7 @@ async function startBot() {
                 const gameName = trimmedText.replace('.fg ', '').trim();
                 if (!gameName) {
                     return await sock.sendMessage(chatJid, {
-                        text: '❌ කරුණාකර game එකේ නම ලබා දෙන්න.\nඋදා: `.fg Far Cry 3`'
+                        text: '❌ කරුණාකර game එකේ නම ලබා දෙන්න.\nඋදා: \`.fg Far Cry 3\`'
                     }, { quoted: msg });
                 }
 
@@ -1037,7 +1034,7 @@ async function startBot() {
                     resultsText += `╚══════════════════════════════════════╝\n\n`;
                     resultsText += `📌 *Reply with the number* to get download links.\n`;
                     resultsText += `📌 උදා: reply with \`1\` for first result\n\n`;
-                    resultsText += `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                    resultsText += `${POWERED_BY}`;
 
                     await sock.sendMessage(chatJid, {
                         text: resultsText,
@@ -1111,7 +1108,6 @@ async function startBot() {
                         });
                     }
 
-                    const startTime = Date.now();
                     let uploadedCount = 0;
                     let wasStopped = false;
 
@@ -1124,20 +1120,16 @@ async function startBot() {
                         if (success && success.success) uploadedCount++;
                     }
 
-                    const endTime = Date.now();
-                    const totalTimeSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
                     if (uploadedCount > 0 && !wasStopped) {
                         const summaryText =
                             `┏━━━━━━━━━━━━━━━━━━━━━━━┓\n` +
-                            `        ⚙️ 𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 ⚙️\n` +
+                            `      ⚙️ ${BOT_NAME_MONO} ⚙️\n` +
                             `┗━━━━━━━━━━━━━━━━━━━━━━━┛\n\n` +
                             `┌────────────────────────\n` +
                             `│ ✅ Status: Done\n` +
                             `│ 📦 Total Parts: ${uploadedCount}\n` +
-                            `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                             `└────────────────────────\n\n` +
-                            `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                            `${POWERED_BY}`;
 
                         await sock.sendMessage(targetGroupJid, { text: summaryText });
                         await sock.sendMessage(chatJid, {
@@ -1164,7 +1156,7 @@ async function startBot() {
             // ═══════════════════════════════════════════════════════════
             if (trimmedText === '.speed') {
                 await sock.sendMessage(chatJid, {
-                    text: '⚡ RV Games සර්වර් වේගය පරීක්ෂා කරමින් පවතී...'
+                    text: `⚡ ${BOT_NAME} සර්වර් වේගය පරීක්ෂා කරමින් පවතී...`
                 }, { quoted: msg });
                 try {
                     const pingStart = Date.now();
@@ -1186,11 +1178,11 @@ async function startBot() {
                     const ulDuration = (ulEnd - ulStart) / 1000;
                     const uploadSpeed = (8 / ulDuration).toFixed(2);
 
-                    const speedText = `*⚡ RV GAMES SERVER SPEED* 🎮\n\n` +
+                    const speedText = `*⚡ ${BOT_NAME} SERVER SPEED* 🎮\n\n` +
                                       `🏓 *Ping:* \`${pingTime} ms\`\n` +
                                       `📥 *Download Speed:* \`${downloadSpeed} Mbps\`\n` +
                                       `📤 *Upload Speed:* \`${uploadSpeed} Mbps\`\n\n` +
-                                      `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                                      `${POWERED_BY}`;
 
                     await sock.sendMessage(chatJid, { text: speedText }, { quoted: msg });
                 } catch (error) {
@@ -1207,7 +1199,7 @@ async function startBot() {
             // ═══════════════════════════════════════════════════════════
             if (trimmedText === '.dc') {
                 await sock.sendMessage(chatJid, {
-                    text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...'
+                    text: `🧹 ${BOT_NAME} සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...`
                 }, { quoted: msg });
                 try {
                     const directory = './';
@@ -1229,11 +1221,11 @@ async function startBot() {
 
                     const freedMB = (freedSpace / (1024 * 1024)).toFixed(2);
 
-                    const clearText = `*🧹 RV GAMES DISK CLEANER* ⚙️\n\n` +
+                    const clearText = `*🧹 ${BOT_NAME} DISK CLEANER* ⚙️\n\n` +
                                       `✅ *Status:* Disk Cleaned Successfully!\n` +
                                       `🗑️ *Removed Files:* \`${deletedCount} files\`\n` +
                                       `📦 *Freed Space:* \`${freedMB} MB\`\n\n` +
-                                      `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
+                                      `${POWERED_BY}`;
 
                     await sock.sendMessage(chatJid, { text: clearText }, { quoted: msg });
                 } catch (error) {
@@ -1250,9 +1242,9 @@ async function startBot() {
             // ═══════════════════════════════════════════════════════════
             if (trimmedText === '.crash') {
                 await sock.sendMessage(chatJid, {
-                    text: '💀 *RV Games Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._'
+                    text: `💀 *${BOT_NAME} Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._`
                 }, { quoted: msg });
-                console.log("💀 Manual Crash triggered: Bot stopped.");
+                console.log(`💀 Manual Crash triggered: ${BOT_NAME} Bot stopped.`);
                 setTimeout(() => {
                     process.exit(0);
                 }, 1000);
@@ -1264,7 +1256,7 @@ async function startBot() {
             // ═══════════════════════════════════════════════════════════
             if (trimmedText === '.menu') {
                 const menuText =
-                    `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
+                    `*👑${BOT_NAME} 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                     `╔════════════════════╗\n` +
                     `┃    🤖 *MAIN COMMANDS MENU* \n` +
                     `╚════════════════════╝\n` +
@@ -1289,7 +1281,7 @@ async function startBot() {
                     `┃ 📜 *.menu*\n` +
                     `┃ ↳ _මෙම විධාන මෙනුව ලබා දෙයි._\n` +
                     `╚════════════════════╝\n\n` +
-                    `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
+                    `_${POWERED_BY}_`;
 
                 await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
                 return;
@@ -1333,7 +1325,7 @@ async function startBot() {
                 setTimeout(() => startBot(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('🎉 RV Games Bot Connected Successfully!');
+            console.log(`🎉 ${BOT_NAME} Bot Connected Successfully!`);
         }
     });
 }
