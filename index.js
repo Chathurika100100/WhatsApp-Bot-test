@@ -295,7 +295,6 @@ async function searchFitGirl(gameName) {
             }
         });
 
-        // Fallback: try alternative selectors
         if (results.length === 0) {
             $('h1.entry-title a, h2.entry-title a').each((i, elem) => {
                 const title = $(elem).text().trim();
@@ -325,7 +324,6 @@ async function getFitGirlParts(gameUrl) {
         const parts = [];
         const seenUrls = new Set();
 
-        // Method 1: Find paste links
         $('a').each((i, elem) => {
             const href = $(elem).attr('href');
             if (href && href.includes('paste.fitgirl-repacks.site')) {
@@ -333,7 +331,6 @@ async function getFitGirlParts(gameUrl) {
             }
         });
 
-        // Fetch paste pages
         for (const pasteUrl of seenUrls) {
             try {
                 const pasteResponse = await axios.get(pasteUrl, {
@@ -356,7 +353,6 @@ async function getFitGirlParts(gameUrl) {
             }
         }
 
-        // Method 2: Direct fuckingfast links in main page
         const pageHtml = response.data;
         const directFFRegex = /https:\/\/fuckingfast\.co\/[^"'\s#]+#([^"'\s]+)/g;
         let directMatch;
@@ -386,17 +382,14 @@ async function getFuckingFastDownloadUrl(fuckingFastUrl) {
 
         const html = response.data;
 
-        // Method 1: window.open in download() function
         const windowOpenRegex = /window\.open\(["'](https:\/\/dl\.fuckingfast\.co\/[^"']+)["']/;
         const match1 = html.match(windowOpenRegex);
         if (match1) return match1[1];
 
-        // Method 2: Any dl.fuckingfast.co link
         const dlRegex = /https:\/\/dl\.fuckingfast\.co\/[^"'\s]+/;
         const match2 = html.match(dlRegex);
         if (match2) return match2[0];
 
-        // Method 3: Extract from all script tags
         const scriptRegex = /<script[^>]*>(.*?)<\/script>/gs;
         let scriptMatch;
         while ((scriptMatch = scriptRegex.exec(html)) !== null) {
@@ -427,7 +420,6 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
         const part = partsToDownload[i];
         const partNum = startIndex + i + 1;
 
-        // Check if stopped
         if (activeTasks.has(chatJid)) {
             const task = activeTasks.get(chatJid);
             if (task.controller.signal.aborted) {
@@ -441,7 +433,6 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
             edit: initialNotify.key 
         }).catch(() => {});
 
-        // Get real download URL
         const realUrl = await getFuckingFastDownloadUrl(part.url);
 
         if (!realUrl) {
@@ -452,7 +443,6 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
             continue;
         }
 
-        // Download and upload
         const fakeMsg = { ...msg, key: { ...msg.key, remoteJid: chatJid } };
         const result = await handleDownloadAndUpload(realUrl, sock, fakeMsg, sendToJid);
 
@@ -463,7 +453,6 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
 
         if (result) uploadedCount++;
 
-        // Small delay between parts
         await new Promise(r => setTimeout(r, 2000));
     }
 
@@ -513,9 +502,30 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // ═══════════════════════════════════════════════════════════════
+    // 🔍 DEBUG MESSAGE HANDLER
+    // ═══════════════════════════════════════════════════════════════
     sock.ev.on('messages.upsert', async m => {
+        console.log('\n🔔 [DEBUG] messages.upsert event fired!');
+        console.log('[DEBUG] m.messages length:', m.messages.length);
+
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return; 
+        console.log('[DEBUG] msg keys:', Object.keys(msg));
+        console.log('[DEBUG] msg.key:', JSON.stringify(msg.key));
+        console.log('[DEBUG] msg.message exists:', !!msg.message);
+
+        if (!msg.message) {
+            console.log('[DEBUG] msg.message is undefined/null, returning');
+            return;
+        }
+
+        console.log('[DEBUG] msg.message keys:', Object.keys(msg.message));
+        console.log('[DEBUG] msg.key.fromMe:', msg.key.fromMe);
+
+        if (msg.key.fromMe) {
+            console.log('[DEBUG] Message is from me, returning');
+            return;
+        }
 
         const text = msg.message?.conversation || 
                      msg.message?.extendedTextMessage?.text || 
@@ -523,18 +533,30 @@ async function startBot() {
                      msg.message?.videoMessage?.caption || 
                      "";
 
-        if (!text.startsWith('.')) return; 
+        console.log('[DEBUG] Extracted text:', JSON.stringify(text));
+        console.log('[DEBUG] text.startsWith("."):', text.startsWith('.'));
+
+        if (!text.startsWith('.')) {
+            console.log('[DEBUG] Text does not start with ., returning');
+            return;
+        }
 
         const senderJid = msg.key.participant || msg.key.remoteJid || ""; 
         const chatJid = msg.key.remoteJid;
+
+        console.log('[DEBUG] senderJid:', senderJid);
+        console.log('[DEBUG] chatJid:', chatJid);
 
         // 🔒 PRIVATE BOT SECURITY CHECK
         const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039']; 
         const senderNumber = senderJid.split('@')[0].split(':')[0]; 
 
         console.log(`[SECURITY CHECK] Command received from: ${senderNumber}`);
+        console.log('[DEBUG] Allowed numbers:', allowedNumbers);
+        console.log('[DEBUG] Is allowed:', allowedNumbers.includes(senderNumber));
 
         if (!allowedNumbers.includes(senderNumber)) {
+            console.log('[DEBUG] Sender NOT allowed, sending access denied');
             const privateMessage = 
                 `🔒 *𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙿𝚁𝙸𝚅𝙰𝚃𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
                 `❌ *Sorry, Access Denied!*\n` +
@@ -542,18 +564,29 @@ async function startBot() {
                 `_This bot is restricted to authorized users only._\n\n` +
                 `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
-            return await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
+            try {
+                await sock.sendMessage(chatJid, { text: privateMessage }, { quoted: msg });
+                console.log('[DEBUG] Access denied message sent successfully');
+            } catch (err) {
+                console.error('[DEBUG] Failed to send access denied:', err.message);
+            }
+            return;
         }
+
+        console.log('[DEBUG] Sender is ALLOWED, processing command...');
 
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = text.match(urlRegex) || [];
+        console.log('[DEBUG] URLs found:', urls);
 
         // ═══════════════════════════════════════════════════════════════
-        // 🎮 .fg COMMAND - FitGirl Repacks Integration
+        // 🎮 .fg COMMAND
         // ═══════════════════════════════════════════════════════════════
         if (text.startsWith('.fg ')) {
+            console.log('[DEBUG] Processing .fg command');
             const gameName = text.replace('.fg ', '').trim();
             if (!gameName) {
+                console.log('[DEBUG] No game name provided');
                 return await sock.sendMessage(chatJid, { text: '❌ කරුණාකර game එකේ නම ලබා දෙන්න.\nඋදා: .fg Far Cry 3' }, { quoted: msg });
             }
 
@@ -562,8 +595,10 @@ async function startBot() {
             }, { quoted: msg });
 
             const results = await searchFitGirl(gameName);
+            console.log('[DEBUG] FitGirl search results:', results.length);
 
             if (results.length === 0) {
+                console.log('[DEBUG] No results found');
                 return await sock.sendMessage(chatJid, { 
                     text: `❌ '${gameName}' සඳහා ප්‍රතිඵල සොයාගත නොහැකි විය.`,
                     edit: searchMsg.key 
@@ -580,7 +615,6 @@ async function startBot() {
 
             await sock.sendMessage(chatJid, { text: resultText, edit: searchMsg.key }).catch(() => {});
 
-            // Store results in session
             fitGirlSessions.set(chatJid, {
                 gameName,
                 results,
@@ -590,13 +624,16 @@ async function startBot() {
                 step: 'select_game'
             });
 
+            console.log('[DEBUG] .fg command completed, session stored');
             return;
         }
 
         // Handle FitGirl session replies
         const session = fitGirlSessions.get(chatJid);
         if (session && session.step === 'select_game') {
+            console.log('[DEBUG] FitGirl session: select_game step');
             const selectedNum = parseInt(text.trim());
+            console.log('[DEBUG] Selected number:', selectedNum);
             if (!isNaN(selectedNum) && selectedNum > 0 && selectedNum <= session.results.length) {
                 const selectedGame = session.results[selectedNum - 1];
                 session.selectedGame = selectedGame;
@@ -606,6 +643,7 @@ async function startBot() {
                 });
 
                 const parts = await getFitGirlParts(selectedGame.link);
+                console.log('[DEBUG] Parts found:', parts.length);
 
                 if (parts.length === 0) {
                     fitGirlSessions.delete(chatJid);
@@ -633,24 +671,27 @@ async function startBot() {
                 await sock.sendMessage(chatJid, { text: partsText, edit: loadingMsg.key }).catch(() => {});
                 session.lastMsgKey = loadingMsg.key;
 
+                console.log('[DEBUG] FitGirl parts list sent');
                 return;
             }
+            console.log('[DEBUG] Invalid selection number, falling through');
         }
 
         if (session && session.step === 'select_action') {
+            console.log('[DEBUG] FitGirl session: select_action step');
             const parts = session.parts;
 
-            // si all
             if (text.trim().toLowerCase() === 'si all') {
+                console.log('[DEBUG] Processing si all');
                 fitGirlSessions.delete(chatJid);
                 await downloadAndUploadParts(parts, 0, sock, msg, senderJid, chatJid);
                 return;
             }
 
-            // sg [group name] all
             const sgAllRegex = /^sg\s+(.+)\s+all$/i;
             const sgAllMatch = text.trim().match(sgAllRegex);
             if (sgAllMatch) {
+                console.log('[DEBUG] Processing sg all');
                 const groupName = sgAllMatch[1].trim().toLowerCase();
 
                 try {
@@ -675,10 +716,10 @@ async function startBot() {
                 }
             }
 
-            // si [number]
             const siNumRegex = /^\.si\s+(\d+)$/i;
             const siNumMatch = text.trim().match(siNumRegex);
             if (siNumMatch) {
+                console.log('[DEBUG] Processing si number');
                 const num = parseInt(siNumMatch[1]);
                 if (num > 0 && num <= parts.length) {
                     fitGirlSessions.delete(chatJid);
@@ -689,10 +730,10 @@ async function startBot() {
                 }
             }
 
-            // sg [group name] [number]
             const sgNumRegex = /^sg\s+(.+)\s+(\d+)$/i;
             const sgNumMatch = text.trim().match(sgNumRegex);
             if (sgNumMatch) {
+                console.log('[DEBUG] Processing sg number');
                 const groupName = sgNumMatch[1].trim().toLowerCase();
                 const num = parseInt(sgNumMatch[2]);
 
@@ -721,26 +762,41 @@ async function startBot() {
                     return await sock.sendMessage(chatJid, { text: `❌ වලංගු අංකයක් නොවේ. 1 සිට ${parts.length} දක්වා තෝරන්න.` });
                 }
             }
+            console.log('[DEBUG] No FitGirl action matched, falling through to normal commands');
         }
 
         // 1️⃣ .si Command 
         if (text.startsWith('.si ')) {
-            if (urls.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
+            console.log('[DEBUG] Processing .si command');
+            if (urls.length === 0) {
+                console.log('[DEBUG] No URLs found for .si');
+                return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
+            }
             for (let url of urls) {
                 const res = await handleDownloadAndUpload(url, sock, msg, senderJid);
                 if (res === 'STOPPED') break; 
             }
+            console.log('[DEBUG] .si command completed');
+            return;
         }
 
         // 2️⃣ .sg Command
         else if (text.startsWith('.sg ')) {
-            if (urls.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
+            console.log('[DEBUG] Processing .sg command');
+            if (urls.length === 0) {
+                console.log('[DEBUG] No URLs found for .sg');
+                return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
+            }
 
             let groupName = text.replace('.sg ', '');
             urls.forEach(u => groupName = groupName.replace(u, ''));
             groupName = groupName.trim().toLowerCase();
 
-            if (!groupName) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න.' }, { quoted: msg });
+            if (!groupName) {
+                console.log('[DEBUG] No group name for .sg');
+                return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර ගෲප් එකේ නම සඳහන් කරන්න.' }, { quoted: msg });
+            }
+
             const initialNotify = await sock.sendMessage(msg.key.remoteJid, { text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...` });
 
             try {
@@ -753,7 +809,10 @@ async function startBot() {
                     }
                 }
 
-                if (!targetGroupJid) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.' });
+                if (!targetGroupJid) {
+                    console.log('[DEBUG] Group not found:', groupName);
+                    return await sock.sendMessage(msg.key.remoteJid, { text: '❌ ඒ නමින් ගෲප් එකක් සොයාගත නොහැකි විය.' });
+                }
 
                 const startTime = Date.now();
                 let uploadedCount = 0;
@@ -790,12 +849,16 @@ async function startBot() {
                 }
 
             } catch (error) {
+                console.error('[DEBUG] .sg error:', error.message);
                 await sock.sendMessage(msg.key.remoteJid, { text: '❌ ගෲප් එකට යැවීමේදී දෝෂයක් ඇති විය.' });
             }
+            console.log('[DEBUG] .sg command completed');
+            return;
         }
 
         // 3️⃣ .stop Command
         else if (text.trim().startsWith('.stop')) { 
+            console.log('[DEBUG] Processing .stop command');
             if (activeTasks.has(chatJid)) {
                 const task = activeTasks.get(chatJid);
 
@@ -825,10 +888,13 @@ async function startBot() {
             } else {
                 await sock.sendMessage(chatJid, { text: '❌ මේ මොහොතේ කිසිදු ෆයිල් එකක් බාගත වෙමින් පවතින්නේ නැත.' }, { quoted: msg });
             }
+            console.log('[DEBUG] .stop command completed');
+            return;
         }
 
         // 4️⃣ .speed Command
         else if (text.trim() === '.speed') {
+            console.log('[DEBUG] Processing .speed command');
             await sock.sendMessage(msg.key.remoteJid, { text: '⚡ RV Games සර්වර් වේගය පරීක්ෂා කරමින් පවතී...' }, { quoted: msg });
             try {
                 const pingStart = Date.now();
@@ -857,14 +923,17 @@ async function startBot() {
                                   `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
                 await sock.sendMessage(msg.key.remoteJid, { text: speedText }, { quoted: msg });
+                console.log('[DEBUG] .speed command completed');
             } catch (error) {
-                console.error("Speed test Error:", error.message);
+                console.error("[DEBUG] Speed test Error:", error.message);
                 await sock.sendMessage(msg.key.remoteJid, { text: `❌ Speed test දෝෂයකි: ${error.message}` }, { quoted: msg });
             }
+            return;
         }
 
         // 5️⃣ .dc Command (Disk Cleaner)
         else if (text.trim() === '.dc') {
+            console.log('[DEBUG] Processing .dc command');
             await sock.sendMessage(msg.key.remoteJid, { text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...' }, { quoted: msg });
             try {
                 const directory = './';
@@ -893,21 +962,26 @@ async function startBot() {
                                   `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
 
                 await sock.sendMessage(msg.key.remoteJid, { text: clearText }, { quoted: msg });
+                console.log('[DEBUG] .dc command completed');
             } catch (error) {
-                console.error("Disk Cleaner Error:", error.message);
+                console.error("[DEBUG] Disk Cleaner Error:", error.message);
                 await sock.sendMessage(msg.key.remoteJid, { text: `❌ Disk එක Clear කිරීමේදී දෝෂයක් ඇති විය: ${error.message}` }, { quoted: msg });
             }
+            return;
         }
         // 6️⃣ .crash Command
         else if (text.trim() === '.crash') {
+            console.log('[DEBUG] Processing .crash command');
             await sock.sendMessage(msg.key.remoteJid, { text: '💀 *RV Games Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._' }, { quoted: msg });
             console.log("💀 Manual Crash triggered: Bot stopped.");
             setTimeout(() => {
                 process.exit(0); 
             }, 1000);
+            return;
         }
         // 7️⃣ .menu Command 
         else if (text.trim() === '.menu') {
+            console.log('[DEBUG] Processing .menu command');
             const menuText = 
                 `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
                 `╔════════════════════╗\n` +
@@ -936,8 +1010,17 @@ async function startBot() {
                 `╚════════════════════╝\n\n` +
                 `_*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 RV Games*_`;
 
-            await sock.sendMessage(msg.key.remoteJid, { text: menuText }, { quoted: msg });
+            try {
+                await sock.sendMessage(msg.key.remoteJid, { text: menuText }, { quoted: msg });
+                console.log('[DEBUG] .menu reply sent successfully to:', msg.key.remoteJid);
+            } catch (err) {
+                console.error('[DEBUG] Failed to send .menu reply:', err.message);
+            }
+            return;
         }
+
+        // If no command matched
+        console.log('[DEBUG] No command matched for text:', JSON.stringify(text));
     });
 
     sock.ev.on('connection.update', (update) => {
