@@ -1,5 +1,5 @@
 import 'dotenv/config'; 
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
@@ -19,7 +19,9 @@ server.listen(PORT, () => {
 
 const authFolder = './bot_session';
 const activeTasks = new Map(); 
-const msgRetryCounterCache = new NodeCache();
+
+// ⚡ IMPORTANT: Create msgRetryCounterCache OUTSIDE the function
+const msgRetryCounterCache = new NodeCache({ stdTTL: 100, checkperiod: 120 });
 
 // 🎮 FitGirl Session Storage (per chat)
 const fitGirlSessions = new Map();
@@ -492,12 +494,28 @@ async function startBot() {
 
     const sock = makeWASocket({
         version,
-        auth: state,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+        },
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }), 
         browser: ['RV Games Bot', 'Chrome', '1.0.0'],
         syncFullHistory: false,
-        msgRetryCounterCache
+        msgRetryCounterCache,
+        // ⚡ IMPORTANT: These settings help with decryption errors
+        generateHighQualityLinkPreview: false,
+        markOnlineOnConnect: true,
+        keepAliveIntervalMs: 30000,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        retryRequestDelayMs: 250,
+        fireInitQueries: true,
+        shouldIgnoreJid: () => false,
+        getMessage: async (key) => {
+            // Required for retrying failed messages
+            return { conversation: '' };
+        }
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -518,11 +536,8 @@ async function startBot() {
         const chatJid = msg.key.remoteJid;
 
         // 🔒 PRIVATE BOT SECURITY CHECK
-        // FIX: Handle both @lid and @s.whatsapp.net formats
         const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039']; 
         let senderNumber = senderJid.split('@')[0].split(':')[0]; 
-
-        // Also check remoteJid if senderJid doesn't match (for private chats)
         const remoteNumber = chatJid.split('@')[0].split(':')[0];
 
         console.log(`[SECURITY CHECK] senderJid: ${senderJid}, senderNumber: ${senderNumber}, remoteNumber: ${remoteNumber}`);
@@ -930,19 +945,34 @@ async function startBot() {
         }
     });
 
+    // ⚡ Handle connection updates with retry logic
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
+            console.log(`[CONNECTION] Closed with status: ${statusCode}`);
+
             if (statusCode === DisconnectReason.loggedOut || statusCode === 405) {
+                console.log('[CONNECTION] Logged out, clearing session...');
                 if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true });
                 process.exit(1); 
+            } else if (statusCode === DisconnectReason.connectionReplaced) {
+                console.log('[CONNECTION] Connection replaced by another session');
+                process.exit(1);
             } else {
+                console.log('[CONNECTION] Reconnecting in 5 seconds...');
                 setTimeout(() => startBot(), 5000); 
             }
         } else if (connection === 'open') {
             console.log('🎉 RV Games Bot Connected Successfully!');
+        } else if (connection === 'connecting') {
+            console.log('⏳ Connecting to WhatsApp...');
         }
+    });
+
+    // Handle errors
+    sock.ev.on('error', (err) => {
+        console.error('[SOCKET ERROR]', err);
     });
 }
 
