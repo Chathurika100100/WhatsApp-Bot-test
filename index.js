@@ -6,6 +6,7 @@ import path from 'path';
 import http from 'http'; 
 import axios from 'axios'; 
 import NodeCache from 'node-cache';
+import * as cheerio from 'cheerio';
 
 // 🌐 Web Server for Railway
 const server = http.createServer((req, res) => {
@@ -21,7 +22,7 @@ const activeTasks = new Map();
 const msgRetryCounterCache = new NodeCache();
 
 // 🎮 FitGirl Session Storage (per chat)
-const fitGirlSessions = new Map(); // chatJid -> { gameName, parts[], lastMsgKey }
+const fitGirlSessions = new Map();
 
 // 📂 Session ID Setup
 function setupSession() {
@@ -77,21 +78,6 @@ function getExtensionFromMime(mimeType) {
         'text/plain': '.txt'
     };
     return map[mimeType] || '.bin';
-}
-
-// 🧹 Cleanup function for temp files
-function cleanupTempFiles() {
-    const directory = './';
-    const files = fs.readdirSync(directory);
-    const protectedFiles = ['index.js', 'package.json', 'package-lock.json', 'node_modules', 'bot_session', '.env', '.gitignore', '.git'];
-
-    files.forEach(file => {
-        const filePath = path.join(directory, file);
-        const stat = fs.statSync(filePath);
-        if (!protectedFiles.includes(file) && stat.isFile()) {
-            try { fs.unlinkSync(filePath); } catch (e) {}
-        }
-    });
 }
 
 // 📥 Heavy Lift Downloader & Auto Content Displayer
@@ -280,42 +266,44 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid) {
 // 🎮 FITGIRL REPACKS INTEGRATION
 // ═══════════════════════════════════════════════════════════════
 
+const AXIOS_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9'
+};
+
 // 🔍 Search FitGirl Repacks
 async function searchFitGirl(gameName) {
     try {
         const searchUrl = `https://fitgirl-repacks.site/?s=${encodeURIComponent(gameName)}`;
         const response = await axios.get(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
+            headers: AXIOS_HEADERS,
             timeout: 15000
         });
 
-        const html = response.data;
+        const $ = cheerio.load(response.data);
         const results = [];
 
-        // Parse search results using regex
-        const articleRegex = /<article[^>]*>.*?<h1[^>]*class="entry-title"[^>]*>.*?<a href="([^"]+)"[^>]*>(.*?)<\/a>.*?<\/h1>.*?<div class="entry-summary">(.*?)<\/div>.*?<\/article>/gs;
-        let match;
+        $('article').each((i, elem) => {
+            const titleElem = $(elem).find('.entry-title a');
+            const title = titleElem.text().trim();
+            const link = titleElem.attr('href');
+            const summary = $(elem).find('.entry-summary').text().trim().substring(0, 200);
 
-        while ((match = articleRegex.exec(html)) !== null) {
-            const link = match[1];
-            const title = match[2].replace(/<[^>]*>/g, '').trim();
-            const summary = match[3].replace(/<[^>]*>/g, ' ').trim().substring(0, 200);
-
-            results.push({ title, link, summary });
-        }
-
-        // Alternative parsing if first regex fails
-        if (results.length === 0) {
-            const titleRegex = /<h1 class="entry-title"><a href="([^"]+)"[^>]*>(.*?)<\/a><\/h1>/g;
-            while ((match = titleRegex.exec(html)) !== null) {
-                results.push({
-                    title: match[2].replace(/<[^>]*>/g, '').trim(),
-                    link: match[1],
-                    summary: ''
-                });
+            if (title && link) {
+                results.push({ title, link, summary });
             }
+        });
+
+        // Fallback: try alternative selectors
+        if (results.length === 0) {
+            $('h1.entry-title a, h2.entry-title a').each((i, elem) => {
+                const title = $(elem).text().trim();
+                const link = $(elem).attr('href');
+                if (title && link) {
+                    results.push({ title, link, summary: '' });
+                }
+            });
         }
 
         return results;
@@ -329,52 +317,50 @@ async function searchFitGirl(gameName) {
 async function getFitGirlParts(gameUrl) {
     try {
         const response = await axios.get(gameUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
+            headers: AXIOS_HEADERS,
             timeout: 15000
         });
 
-        const html = response.data;
+        const $ = cheerio.load(response.data);
         const parts = [];
+        const seenUrls = new Set();
 
-        // Find FuckingFast links in the page
-        // Look for paste links or direct links
-        const pasteRegex = /https:\/\/paste\.fitgirl-repacks\.site\/[^"'\s]+/g;
-        const pasteMatches = html.match(pasteRegex);
+        // Method 1: Find paste links
+        $('a').each((i, elem) => {
+            const href = $(elem).attr('href');
+            if (href && href.includes('paste.fitgirl-repacks.site')) {
+                seenUrls.add(href);
+            }
+        });
 
-        if (pasteMatches && pasteMatches.length > 0) {
-            // Get links from paste page
-            for (const pasteUrl of pasteMatches) {
-                try {
-                    const pasteResponse = await axios.get(pasteUrl, {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        },
-                        timeout: 10000
-                    });
+        // Fetch paste pages
+        for (const pasteUrl of seenUrls) {
+            try {
+                const pasteResponse = await axios.get(pasteUrl, {
+                    headers: AXIOS_HEADERS,
+                    timeout: 10000
+                });
 
-                    const pasteHtml = pasteResponse.data;
-                    // Extract fuckingfast links
-                    const ffRegex = /https:\/\/fuckingfast\.co\/[^"'\s#]+#([^"'\s]+)/g;
-                    let ffMatch;
-                    while ((ffMatch = ffRegex.exec(pasteHtml)) !== null) {
-                        const fullUrl = ffMatch[0];
-                        const fileName = ffMatch[1];
-                        if (!parts.find(p => p.url === fullUrl)) {
-                            parts.push({ url: fullUrl, name: fileName });
-                        }
+                const pasteHtml = pasteResponse.data;
+                const ffRegex = /https:\/\/fuckingfast\.co\/[^"'\s#]+#([^"'\s]+)/g;
+                let ffMatch;
+                while ((ffMatch = ffRegex.exec(pasteHtml)) !== null) {
+                    const fullUrl = ffMatch[0];
+                    const fileName = ffMatch[1];
+                    if (!parts.find(p => p.url === fullUrl)) {
+                        parts.push({ url: fullUrl, name: fileName });
                     }
-                } catch (e) {
-                    console.log('Paste page error:', e.message);
                 }
+            } catch (e) {
+                console.log('Paste page error:', e.message);
             }
         }
 
-        // Also try to find direct fuckingfast links in the main page
+        // Method 2: Direct fuckingfast links in main page
+        const pageHtml = response.data;
         const directFFRegex = /https:\/\/fuckingfast\.co\/[^"'\s#]+#([^"'\s]+)/g;
         let directMatch;
-        while ((directMatch = directFFRegex.exec(html)) !== null) {
+        while ((directMatch = directFFRegex.exec(pageHtml)) !== null) {
             const fullUrl = directMatch[0];
             const fileName = directMatch[1];
             if (!parts.find(p => p.url === fullUrl)) {
@@ -393,36 +379,24 @@ async function getFitGirlParts(gameUrl) {
 async function getFuckingFastDownloadUrl(fuckingFastUrl) {
     try {
         const response = await axios.get(fuckingFastUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9'
-            },
+            headers: AXIOS_HEADERS,
             timeout: 15000,
             maxRedirects: 5
         });
 
         const html = response.data;
 
-        // Method 1: Look for window.open in download() function
+        // Method 1: window.open in download() function
         const windowOpenRegex = /window\.open\(["'](https:\/\/dl\.fuckingfast\.co\/[^"']+)["']/;
         const match1 = html.match(windowOpenRegex);
         if (match1) return match1[1];
 
-        // Method 2: Look for any dl.fuckingfast.co link
+        // Method 2: Any dl.fuckingfast.co link
         const dlRegex = /https:\/\/dl\.fuckingfast\.co\/[^"'\s]+/;
         const match2 = html.match(dlRegex);
         if (match2) return match2[0];
 
-        // Method 3: Look for download button onclick
-        const onclickRegex = /onclick=["']download\(\)["'].*?href=["']([^"']+)["']/s;
-        const match3 = html.match(onclickRegex);
-        if (match3) {
-            const possibleUrl = match3[1];
-            if (possibleUrl.startsWith('http')) return possibleUrl;
-        }
-
-        // Method 4: Extract from script tags
+        // Method 3: Extract from all script tags
         const scriptRegex = /<script[^>]*>(.*?)<\/script>/gs;
         let scriptMatch;
         while ((scriptMatch = scriptRegex.exec(html)) !== null) {
@@ -463,7 +437,7 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
         }
 
         await sock.sendMessage(chatJid, { 
-            text: `🔍 Part ${partNum}/${parts.length}: ${part.name}\n🔗 Getting download link...`,
+            text: `🔍 Part ${partNum}/${parts.length}: ${part.name}\n🔗 Download link ලබා ගනිමින්...`,
             edit: initialNotify.key 
         }).catch(() => {});
 
@@ -472,7 +446,7 @@ async function downloadAndUploadParts(parts, startIndex, sock, msg, sendToJid, c
 
         if (!realUrl) {
             await sock.sendMessage(chatJid, { 
-                text: `❌ Part ${partNum}: Download link ලබා ගැනීමට නොහැකි විය.`,
+                text: `❌ Part ${partNum}: Download link ලබා ගැනීමට නොහැකි විය.\n🔄 URL: ${part.url}`,
                 edit: initialNotify.key 
             }).catch(() => {});
             continue;
