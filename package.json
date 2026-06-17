@@ -1,7 +1,7 @@
 {
   "name": "rv-games-bot",
   "version": "1.4.0",
-  "description": "Premium WhatsApp Downloader Bot for RV Games with FitGirl Repacks Integration",
+  "description": "Premium WhatsApp Downloader Bot for RV Games - FitGirl Edition",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -10,13 +10,10 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.3",
     "axios": "^1.6.8",
+    "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.5",
     "pino": "^8.21.0",
-    "node-cache": "^5.1.2",
-    "cheerio": "^1.0.0-rc.12"
-  },
-  "optionalDependencies": {
-    "puppeteer": "^22.0.0"
+    "node-cache": "^5.1.2"
   },
   "author": "RV Games",
   "license": "MIT"
