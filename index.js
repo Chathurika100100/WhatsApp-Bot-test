@@ -24,10 +24,10 @@ const activeTasks = new Map();
 const msgRetryCounterCache = new NodeCache();
 
 // ═══════════════════════════════════════════════════════════════
-// 📦 FitGirl Session Cache (RAM optimized - stores minimal data)
+// 📦 FitGirl Session Cache (RAM optimized)
 // ═══════════════════════════════════════════════════════════════
-const fitgirlSessions = new Map(); // chatJid -> { searchResults: [], fileNames: [], fuckingFastLinks: [], gameTitle: '' }
-const FITGIRL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const fitgirlSessions = new Map();
+const FITGIRL_CACHE_TTL = 30 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════
 // 📂 Session ID Setup
@@ -102,10 +102,40 @@ function cleanupFitgirlSession(chatJid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 🔍 Helper: Get Quoted Message Text (handles all message types)
+// ═══════════════════════════════════════════════════════════════
+function getQuotedMessageText(msg) {
+    try {
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+        if (!contextInfo) return null;
+
+        const quotedMsg = contextInfo.quotedMessage;
+        if (!quotedMsg) return null;
+
+        // Handle different quoted message types
+        if (quotedMsg.conversation) {
+            return quotedMsg.conversation;
+        }
+        if (quotedMsg.extendedTextMessage?.text) {
+            return quotedMsg.extendedTextMessage.text;
+        }
+        if (quotedMsg.imageMessage?.caption) {
+            return quotedMsg.imageMessage.caption;
+        }
+        if (quotedMsg.videoMessage?.caption) {
+            return quotedMsg.videoMessage.caption;
+        }
+
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 🔍 FITGIRL REPACKS SCRAPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-// 1️⃣ Search FitGirl for games
 async function searchFitGirl(gameName) {
     try {
         const searchUrl = `https://fitgirl-repacks.site/?s=${encodeURIComponent(gameName)}`;
@@ -144,7 +174,6 @@ async function searchFitGirl(gameName) {
     }
 }
 
-// 2️⃣ Extract FuckingFast links from a FitGirl game page
 async function extractFuckingFastLinks(gameUrl) {
     try {
         const response = await axios.get(gameUrl, {
@@ -157,11 +186,9 @@ async function extractFuckingFastLinks(gameUrl) {
         const $ = cheerio.load(response.data);
         const links = [];
 
-        // Find all FuckingFast links
         $('a[href*="fuckingfast.co"]').each((i, el) => {
             const href = $(el).attr('href');
             if (href) {
-                // Extract filename after #
                 const fileName = href.split('#').pop() || `part${i + 1}`;
                 links.push({
                     index: i + 1,
@@ -178,7 +205,6 @@ async function extractFuckingFastLinks(gameUrl) {
     }
 }
 
-// 3️⃣ Get Direct Download Link from FuckingFast page
 async function getDirectDownloadLink(fuckingFastUrl) {
     try {
         const response = await axios.get(fuckingFastUrl, {
@@ -192,35 +218,23 @@ async function getDirectDownloadLink(fuckingFastUrl) {
 
         const html = response.data;
 
-        // Method 1: Look for window.open with direct dl link
         const windowOpenMatch = html.match(/window\.open\s*\(\s*["'](https:\/\/dl\.fuckingfast\.co\/dl\/[^"']+)["']/);
-        if (windowOpenMatch) {
-            return windowOpenMatch[1];
-        }
+        if (windowOpenMatch) return windowOpenMatch[1];
 
-        // Method 2: Look for atob decoded link in download function
         const atobMatch = html.match(/window\.open\s*\(\s*atob\s*\(\s*["']([A-Za-z0-9+/=]+)["']\s*\)/);
         if (atobMatch) {
             const decoded = Buffer.from(atobMatch[1], 'base64').toString('utf-8');
-            if (decoded.startsWith('https://dl.fuckingfast.co')) {
-                return decoded;
-            }
+            if (decoded.startsWith('https://dl.fuckingfast.co')) return decoded;
         }
 
-        // Method 3: Look for any dl.fuckingfast.co link in the page
         const dlMatch = html.match(/https:\/\/dl\.fuckingfast\.co\/dl\/[^"'\s]+/);
-        if (dlMatch) {
-            return dlMatch[0];
-        }
+        if (dlMatch) return dlMatch[0];
 
-        // Method 4: Look for base64 encoded URL in script tags
         const scriptMatch = html.match(/["']([A-Za-z0-9+/=]{50,})["']/);
         if (scriptMatch) {
             try {
                 const decoded = Buffer.from(scriptMatch[1], 'base64').toString('utf-8');
-                if (decoded.startsWith('https://dl.fuckingfast.co')) {
-                    return decoded;
-                }
+                if (decoded.startsWith('https://dl.fuckingfast.co')) return decoded;
             } catch (e) {}
         }
 
@@ -472,6 +486,16 @@ async function startBot() {
         const urls = text.match(urlRegex) || [];
 
         // ═══════════════════════════════════════════════════════
+        // 🔍 Check if this is a REPLY to a FitGirl message
+        // ═══════════════════════════════════════════════════════
+        const quotedText = getQuotedMessageText(msg);
+        console.log(`[DEBUG] Quoted text: ${quotedText?.substring(0, 100)}...`);
+        console.log(`[DEBUG] Current text: ${text}`);
+
+        const isFitGirlSearchReply = quotedText && quotedText.includes('FitGirl Search Results');
+        const isFitGirlPartsReply = quotedText && quotedText.includes('Total Parts:');
+
+        // ═══════════════════════════════════════════════════════
         // 🎮 .fg COMMAND - FitGirl Repacks Integration
         // ═══════════════════════════════════════════════════════
         if (text.startsWith('.fg ')) {
@@ -489,7 +513,6 @@ async function startBot() {
                     return await sock.sendMessage(chatJid, { text: `❌ "${gameName}" සඳහා ප්‍රතිඵල කිසිවක් හමු නොවීය.`, edit: searchMsg.key });
                 }
 
-                // Store results in session (RAM optimized)
                 fitgirlSessions.set(chatJid, {
                     searchResults: results,
                     timestamp: Date.now()
@@ -512,11 +535,13 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 📋 Reply to FitGirl Search Results (Number Selection)
+        // 📋 Reply to FitGirl SEARCH Results (Number Selection)
         // ═══════════════════════════════════════════════════════
-        else if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation?.includes('FitGirl Search Results')) {
+        else if (isFitGirlSearchReply) {
             const selectedNum = parseInt(text.trim());
             const session = fitgirlSessions.get(chatJid);
+
+            console.log(`[DEBUG] FitGirl search reply detected. Selected: ${selectedNum}`);
 
             if (!session || !session.searchResults) {
                 return await sock.sendMessage(chatJid, { text: '❌ Session කල් ඉකුත් වී ඇත. නැවත `.fg` command එක භාවිතා කරන්න.' }, { quoted: msg });
@@ -537,7 +562,6 @@ async function startBot() {
                     return await sock.sendMessage(chatJid, { text: `❌ "${selectedGame.title}" එකේ FuckingFast links හමු නොවීය.`, edit: extractMsg.key });
                 }
 
-                // Update session with links
                 session.fileNames = links.map(l => l.fileName);
                 session.fuckingFastLinks = links;
                 session.gameTitle = selectedGame.title;
@@ -567,15 +591,16 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 📋 Reply to FitGirl File List (Download Commands)
+        // 📋 Reply to FitGirl PARTS List (Download Commands)
         // ═══════════════════════════════════════════════════════
-        else if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation?.includes('Total Parts:')) {
+        else if (isFitGirlPartsReply) {
             const session = fitgirlSessions.get(chatJid);
             if (!session || !session.fuckingFastLinks) {
                 return await sock.sendMessage(chatJid, { text: '❌ Session කල් ඉකුත් වී ඇත. නැවත `.fg` command එක භාවිතා කරන්න.' }, { quoted: msg });
             }
 
             const replyText = text.trim().toLowerCase();
+            console.log(`[DEBUG] FitGirl parts reply detected. Command: ${replyText}`);
 
             // si all - Send all parts to inbox
             if (replyText === 'si all') {
@@ -753,7 +778,7 @@ async function startBot() {
                 const partNum = parseInt(parts[parts.length - 1]);
 
                 if (!groupName || isNaN(partNum) || partNum < 1 || partNum > session.fuckingFastLinks.length) {
-                    return await sock.sendMessage(chatJid, { text: `❌ වැරදි format එකක්. උදා: sg pro games 5\nවලංගු අංකය: 1 සිට ${session.fuckingFastLinks.length} දක්වා`, edit: startMsg.key });
+                    return await sock.sendMessage(chatJid, { text: `❌ වැරදි format එකක්. උදා: sg pro games 5\nවලංගු අංකය: 1 සිට ${session.fuckingFastLinks.length} දක්වා` }, { quoted: msg });
                 }
 
                 const initialNotify = await sock.sendMessage(chatJid, { text: `🔍 '${groupName}' ගෲප් එක සොයමින් පවතී...` });
@@ -1067,7 +1092,7 @@ async function startBot() {
                 console.log(`🧹 Expired FitGirl session cleaned for ${chatJid}`);
             }
         }
-    }, 5 * 60 * 1000); // Every 5 minutes
+    }, 5 * 60 * 1000);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
