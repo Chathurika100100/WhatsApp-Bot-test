@@ -102,7 +102,7 @@ function cleanupFitgirlSession(chatJid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 🔍 Helper: Get Quoted Message Text (handles all message types)
+// 🔍 Helper: Get Quoted Message Text
 // ═══════════════════════════════════════════════════════════════
 function getQuotedMessageText(msg) {
     try {
@@ -112,19 +112,10 @@ function getQuotedMessageText(msg) {
         const quotedMsg = contextInfo.quotedMessage;
         if (!quotedMsg) return null;
 
-        // Handle different quoted message types
-        if (quotedMsg.conversation) {
-            return quotedMsg.conversation;
-        }
-        if (quotedMsg.extendedTextMessage?.text) {
-            return quotedMsg.extendedTextMessage.text;
-        }
-        if (quotedMsg.imageMessage?.caption) {
-            return quotedMsg.imageMessage.caption;
-        }
-        if (quotedMsg.videoMessage?.caption) {
-            return quotedMsg.videoMessage.caption;
-        }
+        if (quotedMsg.conversation) return quotedMsg.conversation;
+        if (quotedMsg.extendedTextMessage?.text) return quotedMsg.extendedTextMessage.text;
+        if (quotedMsg.imageMessage?.caption) return quotedMsg.imageMessage.caption;
+        if (quotedMsg.videoMessage?.caption) return quotedMsg.videoMessage.caption;
 
         return null;
     } catch (e) {
@@ -460,10 +451,19 @@ async function startBot() {
                      msg.message?.videoMessage?.caption ||
                      "";
 
-        if (!text.startsWith('.')) return;
-
         const senderJid = msg.key.participant || msg.key.remoteJid || "";
         const chatJid = msg.key.remoteJid;
+
+        // 🔍 Check if this is a REPLY to a FitGirl message
+        const quotedText = getQuotedMessageText(msg);
+        const isFitGirlSearchReply = quotedText && quotedText.includes('FitGirl Search Results');
+        const isFitGirlPartsReply = quotedText && quotedText.includes('Total Parts:');
+        const isFitGirlReply = isFitGirlSearchReply || isFitGirlPartsReply;
+
+        console.log(`[DEBUG] Text: "${text}", IsFitGirlReply: ${isFitGirlReply}`);
+
+        // Skip dot check for FitGirl replies (replies don't need . prefix)
+        if (!text.startsWith('.') && !isFitGirlReply) return;
 
         // 🔒 PRIVATE BOT SECURITY CHECK
         const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039'];
@@ -484,16 +484,6 @@ async function startBot() {
 
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = text.match(urlRegex) || [];
-
-        // ═══════════════════════════════════════════════════════
-        // 🔍 Check if this is a REPLY to a FitGirl message
-        // ═══════════════════════════════════════════════════════
-        const quotedText = getQuotedMessageText(msg);
-        console.log(`[DEBUG] Quoted text: ${quotedText?.substring(0, 100)}...`);
-        console.log(`[DEBUG] Current text: ${text}`);
-
-        const isFitGirlSearchReply = quotedText && quotedText.includes('FitGirl Search Results');
-        const isFitGirlPartsReply = quotedText && quotedText.includes('Total Parts:');
 
         // ═══════════════════════════════════════════════════════
         // 🎮 .fg COMMAND - FitGirl Repacks Integration
@@ -541,7 +531,7 @@ async function startBot() {
             const selectedNum = parseInt(text.trim());
             const session = fitgirlSessions.get(chatJid);
 
-            console.log(`[DEBUG] FitGirl search reply detected. Selected: ${selectedNum}`);
+            console.log(`[DEBUG] FitGirl search reply. Selected: ${selectedNum}`);
 
             if (!session || !session.searchResults) {
                 return await sock.sendMessage(chatJid, { text: '❌ Session කල් ඉකුත් වී ඇත. නැවත `.fg` command එක භාවිතා කරන්න.' }, { quoted: msg });
@@ -600,7 +590,7 @@ async function startBot() {
             }
 
             const replyText = text.trim().toLowerCase();
-            console.log(`[DEBUG] FitGirl parts reply detected. Command: ${replyText}`);
+            console.log(`[DEBUG] FitGirl parts reply. Command: ${replyText}`);
 
             // si all - Send all parts to inbox
             if (replyText === 'si all') {
