@@ -195,29 +195,7 @@ async function resolveGoFile(url) {
     }
 }
 
-// 🎯 DataNodes Resolver
-async function resolveDataNodes(url) {
-    try {
-        const response = await axios.get(url, {
-            headers: { ...BROWSER_HEADERS, 'Referer': 'https://fitgirl-repacks.site/' },
-            timeout: 15000,
-            validateStatus: () => true
-        });
 
-        if (response.status === 200) {
-            const html = response.data;
-            // Try to find direct download link
-            const directMatch = html.match(/href=["'](https:\/\/[^"']+)["'].*?download/i);
-            if (directMatch) return directMatch[1];
-        }
-
-        // Fallback: return URL as-is, let axios handle redirects
-        return url;
-    } catch (error) {
-        console.error(`[RESOLVER] DataNodes error: ${error.message}`);
-        return url;
-    }
-}
 
 // 🎯 BuzzHeavier Resolver
 async function resolveBuzzHeavier(url) {
@@ -519,12 +497,7 @@ async function getFitGirlLinks(gameUrl) {
             }
         });
 
-        // Priority 4: DataNodes
-        $('a[href*="datanodes.to"]').each((i, el) => {
-            const href = $(el).attr('href');
-            if (href) {
-                links.push({ host: 'datanodes', url: href, fileName: `part${links.length + 1}` });
-            }
+                    }
         });
 
         // Priority 5: BuzzHeavier
@@ -567,8 +540,7 @@ async function getPastebinLinks(pasteUrl) {
             { pattern: 'fuckingfast.co', host: 'fuckingfast' },
             { pattern: 'pixeldrain.com', host: 'pixeldrain' },
             { pattern: 'gofile.io', host: 'gofile' },
-            { pattern: 'datanodes.to', host: 'datanodes' },
-            { pattern: 'buzzheavier.com', host: 'buzzheavier' }
+                        { pattern: 'buzzheavier.com', host: 'buzzheavier' }
         ];
 
         $('a').each((i, el) => {
