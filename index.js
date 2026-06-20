@@ -21,7 +21,7 @@ const authFolder = './bot_session';
 const activeTasks = new Map(); 
 const msgRetryCounterCache = new NodeCache();
 
-// 🎮 FitGirl Session Storage (RAM එකේ තබා ගැනීම - user එකකට එකක්)
+// 🎮 FitGirl Session Storage
 const fitgirlSessions = new Map();
 
 // 📂 Session ID Setup
@@ -61,7 +61,7 @@ function getProgressBar(percent) {
     return '▰'.repeat(filled) + '▱'.repeat(empty);
 }
 
-// 🗂️ Extension Generator based on MIME-Type
+// 🗂️ Extension Generator
 function getExtensionFromMime(mimeType) {
     const map = {
         'application/zip': '.zip',
@@ -81,7 +81,184 @@ function getExtensionFromMime(mimeType) {
     return map[mimeType] || '.bin';
 }
 
-// 📥 Heavy Lift Downloader & Auto Content Displayer
+// ═══════════════════════════════════════════════════════════════
+// 🔗 LINK RESOLVER - Multi-Host Support
+// ═══════════════════════════════════════════════════════════════
+
+const BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1'
+};
+
+// 🎯 FuckingFast Resolver
+async function resolveFuckingFast(url) {
+    try {
+        console.log(`[RESOLVER] Resolving FuckingFast: ${url}`);
+
+        const response = await axios.get(url, {
+            headers: {
+                ...BROWSER_HEADERS,
+                'Referer': 'https://fitgirl-repacks.site/'
+            },
+            timeout: 20000,
+            maxRedirects: 5,
+            validateStatus: () => true
+        });
+
+        if (response.status !== 200) {
+            console.log(`[RESOLVER] FuckingFast returned status ${response.status}`);
+            return null;
+        }
+
+        const html = response.data;
+
+        // Method 1: window.open pattern
+        const dlMatch = html.match(/window\.open\("(https:\/\/dl\.fuckingfast\.co\/[^"]+)"/);
+        if (dlMatch && dlMatch[1]) {
+            console.log(`[RESOLVER] Found direct link (method 1): ${dlMatch[1]}`);
+            return dlMatch[1];
+        }
+
+        // Method 2: Any dl.fuckingfast.co URL
+        const altMatch = html.match(/(https:\/\/dl\.fuckingfast\.co\/[^"'\s]+)/);
+        if (altMatch && altMatch[1]) {
+            console.log(`[RESOLVER] Found direct link (method 2): ${altMatch[1]}`);
+            return altMatch[1];
+        }
+
+        // Method 3: Look for download button onclick
+        const onclickMatch = html.match(/onclick=["'].*?(https:\/\/dl\.fuckingfast\.co\/[^"']+)["']/);
+        if (onclickMatch && onclickMatch[1]) {
+            console.log(`[RESOLVER] Found direct link (method 3): ${onclickMatch[1]}`);
+            return onclickMatch[1];
+        }
+
+        console.log(`[RESOLVER] Could not find direct link in FuckingFast page`);
+        return null;
+    } catch (error) {
+        console.error(`[RESOLVER] FuckingFast error: ${error.message}`);
+        return null;
+    }
+}
+
+// 🎯 PixelDrain Resolver
+async function resolvePixelDrain(url) {
+    try {
+        const fileId = url.match(/pixeldrain\.com\/\w+\/(\w+)/)?.[1];
+        if (!fileId) return null;
+
+        const apiUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
+        console.log(`[RESOLVER] PixelDrain direct: ${apiUrl}`);
+        return apiUrl;
+    } catch (error) {
+        console.error(`[RESOLVER] PixelDrain error: ${error.message}`);
+        return null;
+    }
+}
+
+// 🎯 GoFile Resolver
+async function resolveGoFile(url) {
+    try {
+        const contentId = url.match(/gofile\.io\/d\/(\w+)/)?.[1];
+        if (!contentId) return null;
+
+        // Get server and direct links via API
+        const apiUrl = `https://api.gofile.io/contents/${contentId}?wt=4fd6s89d7s6`;
+        const response = await axios.get(apiUrl, {
+            headers: BROWSER_HEADERS,
+            timeout: 15000
+        });
+
+        if (response.data?.data?.children) {
+            const files = Object.values(response.data.data.children);
+            if (files.length > 0) {
+                console.log(`[RESOLVER] GoFile direct: ${files[0].link}`);
+                return files[0].link;
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error(`[RESOLVER] GoFile error: ${error.message}`);
+        return null;
+    }
+}
+
+// 🎯 DataNodes Resolver
+async function resolveDataNodes(url) {
+    try {
+        const response = await axios.get(url, {
+            headers: { ...BROWSER_HEADERS, 'Referer': 'https://fitgirl-repacks.site/' },
+            timeout: 15000,
+            validateStatus: () => true
+        });
+
+        if (response.status === 200) {
+            const html = response.data;
+            // Try to find direct download link
+            const directMatch = html.match(/href=["'](https:\/\/[^"']+)["'].*?download/i);
+            if (directMatch) return directMatch[1];
+        }
+
+        // Fallback: return URL as-is, let axios handle redirects
+        return url;
+    } catch (error) {
+        console.error(`[RESOLVER] DataNodes error: ${error.message}`);
+        return url;
+    }
+}
+
+// 🎯 BuzzHeavier Resolver
+async function resolveBuzzHeavier(url) {
+    try {
+        const fileId = url.match(/buzzheavier\.com\/([^\/]+)/)?.[1];
+        if (!fileId) return null;
+
+        const directUrl = `https://buzzheavier.com/${fileId}/download`;
+        console.log(`[RESOLVER] BuzzHeavier direct: ${directUrl}`);
+        return directUrl;
+    } catch (error) {
+        console.error(`[RESOLVER] BuzzHeavier error: ${error.message}`);
+        return null;
+    }
+}
+
+// 🎯 Master Resolver - Detects host and routes to correct resolver
+async function resolveDirectLink(url) {
+    console.log(`[RESOLVER] Resolving: ${url}`);
+
+    if (url.includes('fuckingfast.co')) {
+        return await resolveFuckingFast(url);
+    } else if (url.includes('pixeldrain.com')) {
+        return await resolvePixelDrain(url);
+    } else if (url.includes('gofile.io')) {
+        return await resolveGoFile(url);
+    } else if (url.includes('datanodes.to')) {
+        return await resolveDataNodes(url);
+    } else if (url.includes('buzzheavier.com')) {
+        return await resolveBuzzHeavier(url);
+    } else {
+        // Unknown host - try to use as-is
+        console.log(`[RESOLVER] Unknown host, using URL as-is`);
+        return url;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 📥 DOWNLOADER
+// ═══════════════════════════════════════════════════════════════
+
 async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverride = null) {
     const chatJid = msg.key.remoteJid;
     const progressMsg = await sock.sendMessage(chatJid, { text: `🔍 𝖱𝖵 𝖦𝖺𝗆𝖾𝗌 Bot ලින්ක් එක පරීක්ෂා කරමින් පවතී...` }, { quoted: msg });
@@ -104,9 +281,7 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
             method: 'GET',
             responseType: 'stream',
             signal: controller.signal, 
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
+            headers: BROWSER_HEADERS,
             maxRedirects: 10,
             timeout: 300000
         });
@@ -258,24 +433,24 @@ async function handleDownloadAndUpload(url, sock, msg, sendToJid, fileNameOverri
             return 'STOPPED'; 
         }
 
-        console.error(error);
+        console.error(`[DOWNLOAD ERROR] ${error.message}`);
         activeTasks.delete(chatJid);
-        await sock.sendMessage(chatJid, { text: `❌ දෝෂයක්: ෆයිල් එක ලබා ගැනීමට නොහැකි විය.`, edit: progressMsg.key }).catch(() => {});
+        await sock.sendMessage(chatJid, { text: `❌ දෝෂයක්: ${error.message}`, edit: progressMsg.key }).catch(() => {});
         return false;
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 🎮 FITGIRL REPACKS SCRAPER FUNCTIONS
+// 🎮 FITGIRL SCRAPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
 async function searchFitGirl(gameName) {
     try {
         const searchUrl = `https://fitgirl-repacks.site/?s=${encodeURIComponent(gameName)}`;
+        console.log(`[SCRAPER] Searching: ${searchUrl}`);
+
         const response = await axios.get(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
+            headers: BROWSER_HEADERS,
             timeout: 15000
         });
 
@@ -283,8 +458,9 @@ async function searchFitGirl(gameName) {
         const results = [];
 
         $('article.type-post').each((i, el) => {
-            const title = $(el).find('h1.entry-title a, h2.entry-title a').first().text().trim();
-            const link = $(el).find('h1.entry-title a, h2.entry-title a').first().attr('href');
+            const titleEl = $(el).find('h1.entry-title a, h2.entry-title a').first();
+            const title = titleEl.text().trim();
+            const link = titleEl.attr('href');
             const excerpt = $(el).find('.entry-summary p').first().text().trim().substring(0, 200);
 
             if (title && link) {
@@ -297,114 +473,136 @@ async function searchFitGirl(gameName) {
             }
         });
 
+        console.log(`[SCRAPER] Found ${results.length} results`);
         return results;
     } catch (error) {
-        console.error('FitGirl Search Error:', error.message);
+        console.error('[SCRAPER] Search Error:', error.message);
         return [];
     }
 }
 
 async function getFitGirlLinks(gameUrl) {
     try {
+        console.log(`[SCRAPER] Fetching game page: ${gameUrl}`);
+
         const response = await axios.get(gameUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
+            headers: BROWSER_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
         const links = [];
 
+        // Priority 1: FuckingFast
         $('a[href*="fuckingfast.co"]').each((i, el) => {
             const href = $(el).attr('href');
             if (href && href.includes('#')) {
                 const fileName = href.split('#').pop();
-                links.push({
-                    number: i + 1,
-                    url: href,
-                    fileName: fileName
-                });
+                links.push({ host: 'fuckingfast', url: href, fileName });
             }
         });
 
+        // Priority 2: PixelDrain
+        $('a[href*="pixeldrain.com"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+                const fileName = href.split('/').pop() || `part${links.length + 1}`;
+                links.push({ host: 'pixeldrain', url: href, fileName });
+            }
+        });
+
+        // Priority 3: GoFile
+        $('a[href*="gofile.io"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+                links.push({ host: 'gofile', url: href, fileName: `part${links.length + 1}` });
+            }
+        });
+
+        // Priority 4: DataNodes
+        $('a[href*="datanodes.to"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+                links.push({ host: 'datanodes', url: href, fileName: `part${links.length + 1}` });
+            }
+        });
+
+        // Priority 5: BuzzHeavier
+        $('a[href*="buzzheavier.com"]').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href) {
+                links.push({ host: 'buzzheavier', url: href, fileName: `part${links.length + 1}` });
+            }
+        });
+
+        // Pastebin links
         $('a[href*="paste.fitgirl-repacks.site"]').each((i, el) => {
             const href = $(el).attr('href');
             if (href) {
-                links.push({
-                    number: links.length + 1,
-                    url: href,
-                    fileName: 'pastebin_links'
-                });
+                links.push({ host: 'pastebin', url: href, fileName: 'pastebin_links' });
             }
         });
 
+        console.log(`[SCRAPER] Found ${links.length} links from game page`);
         return links;
     } catch (error) {
-        console.error('FitGirl Links Error:', error.message);
+        console.error('[SCRAPER] Links Error:', error.message);
         return [];
-    }
-}
-
-async function getRealDownloadLink(fuckingFastUrl) {
-    try {
-        const response = await axios.get(fuckingFastUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 15000
-        });
-
-        const html = response.data;
-
-        const dlMatch = html.match(/window\.open\("(https:\/\/dl\.fuckingfast\.co\/dl\/[^"]+)"/);
-        if (dlMatch && dlMatch[1]) {
-            return dlMatch[1];
-        }
-
-        const altMatch = html.match(/"(https:\/\/dl\.fuckingfast\.co\/[^"]+)"/);
-        if (altMatch && altMatch[1]) {
-            return altMatch[1];
-        }
-
-        return null;
-    } catch (error) {
-        console.error('Real Link Error:', error.message);
-        return null;
     }
 }
 
 async function getPastebinLinks(pasteUrl) {
     try {
+        console.log(`[SCRAPER] Fetching pastebin: ${pasteUrl}`);
+
         const response = await axios.get(pasteUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
+            headers: BROWSER_HEADERS,
             timeout: 15000
         });
 
         const $ = cheerio.load(response.data);
         const links = [];
 
+        const hostPatterns = [
+            { pattern: 'fuckingfast.co', host: 'fuckingfast' },
+            { pattern: 'pixeldrain.com', host: 'pixeldrain' },
+            { pattern: 'gofile.io', host: 'gofile' },
+            { pattern: 'datanodes.to', host: 'datanodes' },
+            { pattern: 'buzzheavier.com', host: 'buzzheavier' }
+        ];
+
         $('a').each((i, el) => {
             const href = $(el).attr('href');
-            if (href && href.includes('fuckingfast.co') && href.includes('#')) {
-                const fileName = href.split('#').pop();
-                links.push({
-                    number: links.length + 1,
-                    url: href,
-                    fileName: fileName
-                });
+            if (!href) return;
+
+            for (const hp of hostPatterns) {
+                if (href.includes(hp.pattern)) {
+                    let fileName = 'unknown';
+                    if (href.includes('#')) {
+                        fileName = href.split('#').pop();
+                    } else {
+                        fileName = href.split('/').pop() || `part${links.length + 1}`;
+                    }
+
+                    // Avoid duplicates
+                    if (!links.some(l => l.url === href)) {
+                        links.push({ host: hp.host, url: href, fileName });
+                    }
+                    break;
+                }
             }
         });
 
+        console.log(`[SCRAPER] Found ${links.length} links from pastebin`);
         return links;
     } catch (error) {
-        console.error('Pastebin Error:', error.message);
+        console.error('[SCRAPER] Pastebin Error:', error.message);
         return [];
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 🤖 BOT MAIN
 // ═══════════════════════════════════════════════════════════════
 
 async function startBot() {
@@ -427,7 +625,6 @@ async function startBot() {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return; 
 
-        // 🔧 FIXED: Better text extraction including reply context
         let text = '';
         if (msg.message.conversation) {
             text = msg.message.conversation;
@@ -441,32 +638,27 @@ async function startBot() {
 
         text = text.trim();
 
-        // 🔧 Also check if it's a reply to a bot message - accept plain numbers too
-        const isReplyToBot = msg.message.extendedTextMessage?.contextInfo?.participant === undefined || 
-                             msg.message.extendedTextMessage?.contextInfo?.stanzaId !== undefined;
-
-        console.log(`[MESSAGE] From: ${msg.key.remoteJid}, Text: "${text}", IsReply: ${isReplyToBot}`);
-
-        // If it's just a number reply to bot's search results, treat it as .fg [number]
+        const isReplyToBot = msg.message.extendedTextMessage?.contextInfo?.stanzaId !== undefined;
         const session = fitgirlSessions.get(msg.key.remoteJid);
         const isNumberOnly = /^\d+$/.test(text);
+
+        console.log(`[MESSAGE] From: ${msg.key.remoteJid}, Text: "${text}", IsReply: ${isReplyToBot}`);
 
         if (isNumberOnly && session && session.results && isReplyToBot) {
             text = `.fg ${text}`;
             console.log(`[AUTO CONVERT] Converted to: "${text}"`);
         }
 
-        // Check for commands (starts with .)
         if (!text.startsWith('.')) return; 
 
         const senderJid = msg.key.participant || msg.key.remoteJid || ""; 
         const chatJid = msg.key.remoteJid;
 
-        // 🔒 PRIVATE BOT SECURITY CHECK
+        // 🔒 SECURITY CHECK
         const allowedNumbers = ['94701030330', '94740375946', '212038592811214', '275698514133039']; 
         const senderNumber = senderJid.split('@')[0].split(':')[0]; 
 
-        console.log(`[SECURITY CHECK] Command received from: ${senderNumber}`);
+        console.log(`[SECURITY CHECK] Command from: ${senderNumber}`);
 
         if (!allowedNumbers.includes(senderNumber)) {
             const privateMessage = 
@@ -483,7 +675,7 @@ async function startBot() {
         const urls = text.match(urlRegex) || [];
 
         // ═══════════════════════════════════════════════════════
-        // 🎮 .fg [game name] - Search FitGirl
+        // 🎮 .fg [game name] - Search
         // ═══════════════════════════════════════════════════════
         if (text.startsWith('.fg ') && !text.match(/^\.fg\s+\d+$/)) {
             const gameName = text.replace('.fg ', '').trim();
@@ -524,11 +716,11 @@ async function startBot() {
 
             } catch (error) {
                 console.error('.fg search error:', error);
-                await sock.sendMessage(chatJid, { text: `❌ Search කිරීමේදී දෝෂයක් ඇති විය: ${error.message}`, edit: searchMsg.key });
+                await sock.sendMessage(chatJid, { text: `❌ Search කිරීමේදී දෝෂයක්: ${error.message}`, edit: searchMsg.key });
             }
         }
 
-        // 🎮 .fg [number] - Select result and get links
+        // 🎮 .fg [number] - Select result
         else if (text.match(/^\.fg\s+\d+$/)) {
             const selectedNum = parseInt(text.replace('.fg ', '').trim());
             const session = fitgirlSessions.get(chatJid);
@@ -539,7 +731,7 @@ async function startBot() {
 
             const selectedGame = session.results.find(r => r.number === selectedNum);
             if (!selectedGame) {
-                return await sock.sendMessage(chatJid, { text: `❌ අංක ${selectedNum} සඳහා result එකක් නැත. කරුණාකර නැවත search කරන්න.` }, { quoted: msg });
+                return await sock.sendMessage(chatJid, { text: `❌ අංක ${selectedNum} සඳහා result එකක් නැත.` }, { quoted: msg });
             }
 
             const linkMsg = await sock.sendMessage(chatJid, { text: `📋 *${selectedGame.title}* වෙතින් links ලබා ගනිමින්...` }, { quoted: msg });
@@ -549,13 +741,21 @@ async function startBot() {
                 const pageLinks = await getFitGirlLinks(selectedGame.link);
 
                 for (const pl of pageLinks) {
-                    if (pl.fileName === 'pastebin_links' && pl.url.includes('paste.fitgirl-repacks.site')) {
+                    if (pl.host === 'pastebin' && pl.url.includes('paste.fitgirl-repacks.site')) {
                         const pasteLinks = await getPastebinLinks(pl.url);
                         allLinks = allLinks.concat(pasteLinks);
-                    } else if (pl.url.includes('fuckingfast.co')) {
+                    } else {
                         allLinks.push(pl);
                     }
                 }
+
+                // Remove duplicates by URL
+                const seen = new Set();
+                allLinks = allLinks.filter(l => {
+                    if (seen.has(l.url)) return false;
+                    seen.add(l.url);
+                    return true;
+                });
 
                 if (allLinks.length === 0) {
                     return await sock.sendMessage(chatJid, { text: `❌ *${selectedGame.title}* සඳහා download links සොයාගත නොහැකි විය.`, edit: linkMsg.key });
@@ -566,7 +766,7 @@ async function startBot() {
                 linksText += `*Download Links:*\n\n`;
 
                 allLinks.forEach((l, i) => {
-                    linksText += `${i + 1}. *${l.fileName}*\n`;
+                    linksText += `${i + 1}. *${l.fileName}* _(Host: ${l.host})_\n`;
                 });
 
                 linksText += `\n\n*📥 Download Commands:*\n`;
@@ -589,7 +789,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 📥 .si all - FitGirl links සියල්ල inbox එකට
+        // 📥 .si all
         // ═══════════════════════════════════════════════════════
         else if (text.trim() === '.si all') {
             const session = fitgirlSessions.get(chatJid);
@@ -599,6 +799,7 @@ async function startBot() {
 
             const startTime = Date.now();
             let uploadedCount = 0;
+            let failedCount = 0;
             let wasStopped = false;
             const totalParts = session.links.length;
 
@@ -606,10 +807,13 @@ async function startBot() {
 
             for (let i = 0; i < session.links.length; i++) {
                 const linkObj = session.links[i];
-                const realUrl = await getRealDownloadLink(linkObj.url);
+                console.log(`[DOWNLOAD] Processing part ${i + 1}/${totalParts}: ${linkObj.fileName}`);
+
+                const realUrl = await resolveDirectLink(linkObj.url);
 
                 if (!realUrl) {
-                    console.log(`Failed to get real link for: ${linkObj.fileName}`);
+                    console.log(`[DOWNLOAD] Failed to resolve: ${linkObj.url}`);
+                    failedCount++;
                     continue;
                 }
 
@@ -632,6 +836,7 @@ async function startBot() {
                     `┌────────────────────────\n` +
                     `│ ✅ Status: Done\n` +
                     `│ 📦 Total Parts: ${uploadedCount}\n` +
+                    `│ ❌ Failed: ${failedCount}\n` +
                     `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                     `└────────────────────────\n\n` +
                     `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
@@ -644,7 +849,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 👥 .sg [group name] all - FitGirl links සියල්ල group එකට
+        // 👥 .sg [group] all
         // ═══════════════════════════════════════════════════════
         else if (text.match(/^\.sg\s+.+\s+all$/i)) {
             const session = fitgirlSessions.get(chatJid);
@@ -670,6 +875,7 @@ async function startBot() {
 
                 const startTime = Date.now();
                 let uploadedCount = 0;
+                let failedCount = 0;
                 let wasStopped = false;
                 const totalParts = session.links.length;
 
@@ -677,9 +883,12 @@ async function startBot() {
 
                 for (let i = 0; i < session.links.length; i++) {
                     const linkObj = session.links[i];
-                    const realUrl = await getRealDownloadLink(linkObj.url);
+                    const realUrl = await resolveDirectLink(linkObj.url);
 
-                    if (!realUrl) continue;
+                    if (!realUrl) {
+                        failedCount++;
+                        continue;
+                    }
 
                     const success = await handleDownloadAndUpload(realUrl, sock, msg, targetGroupJid, linkObj.fileName);
                     if (success === 'STOPPED') {
@@ -700,6 +909,7 @@ async function startBot() {
                         `┌────────────────────────\n` +
                         `│ ✅ Status: Done\n` +
                         `│ 📦 Total Parts: ${uploadedCount}\n` +
+                        `│ ❌ Failed: ${failedCount}\n` +
                         `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                         `└────────────────────────\n\n` +
                         `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
@@ -716,7 +926,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 📥 .si [number] - Specific part number එකේ සිට inbox එකට
+        // 📥 .si [number]
         // ═══════════════════════════════════════════════════════
         else if (text.match(/^\.si\s+\d+$/)) {
             const partNum = parseInt(text.replace('.si ', '').trim());
@@ -732,6 +942,7 @@ async function startBot() {
 
             const startTime = Date.now();
             let uploadedCount = 0;
+            let failedCount = 0;
             let wasStopped = false;
             const linksToDownload = session.links.slice(partNum - 1);
 
@@ -739,9 +950,12 @@ async function startBot() {
 
             for (let i = 0; i < linksToDownload.length; i++) {
                 const linkObj = linksToDownload[i];
-                const realUrl = await getRealDownloadLink(linkObj.url);
+                const realUrl = await resolveDirectLink(linkObj.url);
 
-                if (!realUrl) continue;
+                if (!realUrl) {
+                    failedCount++;
+                    continue;
+                }
 
                 const success = await handleDownloadAndUpload(realUrl, sock, msg, senderJid, linkObj.fileName);
                 if (success === 'STOPPED') {
@@ -762,6 +976,7 @@ async function startBot() {
                     `┌────────────────────────\n` +
                     `│ ✅ Status: Done\n` +
                     `│ 📦 Total Parts: ${uploadedCount}\n` +
+                    `│ ❌ Failed: ${failedCount}\n` +
                     `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                     `└────────────────────────\n\n` +
                     `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
@@ -774,7 +989,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 👥 .sg [group name] [number] - Specific part සිට group එකට
+        // 👥 .sg [group] [number]
         // ═══════════════════════════════════════════════════════
         else if (text.match(/^\.sg\s+.+\s+\d+$/)) {
             const match = text.match(/^\.sg\s+(.+)\s+(\d+)$/);
@@ -808,6 +1023,7 @@ async function startBot() {
 
                 const startTime = Date.now();
                 let uploadedCount = 0;
+                let failedCount = 0;
                 let wasStopped = false;
                 const linksToDownload = session.links.slice(partNum - 1);
 
@@ -815,9 +1031,12 @@ async function startBot() {
 
                 for (let i = 0; i < linksToDownload.length; i++) {
                     const linkObj = linksToDownload[i];
-                    const realUrl = await getRealDownloadLink(linkObj.url);
+                    const realUrl = await resolveDirectLink(linkObj.url);
 
-                    if (!realUrl) continue;
+                    if (!realUrl) {
+                        failedCount++;
+                        continue;
+                    }
 
                     const success = await handleDownloadAndUpload(realUrl, sock, msg, targetGroupJid, linkObj.fileName);
                     if (success === 'STOPPED') {
@@ -838,6 +1057,7 @@ async function startBot() {
                         `┌────────────────────────\n` +
                         `│ ✅ Status: Done\n` +
                         `│ 📦 Total Parts: ${uploadedCount}\n` +
+                        `│ ❌ Failed: ${failedCount}\n` +
                         `│ ⏱️ Time Taken: ${totalTimeSeconds}s\n` +
                         `└────────────────────────\n\n` +
                         `*𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈  RV Games*`;
@@ -854,7 +1074,7 @@ async function startBot() {
         }
 
         // ═══════════════════════════════════════════════════════
-        // 1️⃣ .si Command (Original - Direct URL)
+        // 1️⃣ .si (Direct URL)
         // ═══════════════════════════════════════════════════════
         else if (text.startsWith('.si ') && !text.match(/^\.si\s+\d+$/) && text.trim() !== '.si all') {
             if (urls.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
@@ -864,7 +1084,8 @@ async function startBot() {
             }
         }
 
-        // 2️⃣ .sg Command (Original - Direct URL)
+        // 2️⃣ .sg (Direct URL)
+        // ═══════════════════════════════════════════════════════
         else if (text.startsWith('.sg ') && !text.match(/^\.sg\s+.+\s+all$/i) && !text.match(/^\.sg\s+.+\s+\d+$/)) {
             if (urls.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: '❌ කරුණාකර වලංගු ලින්ක් එකක් ලබා දෙන්න.' }, { quoted: msg });
 
@@ -926,7 +1147,8 @@ async function startBot() {
             }
         }
 
-        // 3️⃣ .stop Command
+        // 3️⃣ .stop
+        // ═══════════════════════════════════════════════════════
         else if (text.trim().startsWith('.stop')) { 
             if (activeTasks.has(chatJid)) {
                 const task = activeTasks.get(chatJid);
@@ -959,7 +1181,8 @@ async function startBot() {
             }
         }
 
-        // 4️⃣ .speed Command
+        // 4️⃣ .speed
+        // ═══════════════════════════════════════════════════════
         else if (text.trim() === '.speed') {
             await sock.sendMessage(msg.key.remoteJid, { text: '⚡ RV Games සර්වර් වේගය පරීක්ෂා කරමින් පවතී...' }, { quoted: msg });
             try {
@@ -995,7 +1218,8 @@ async function startBot() {
             }
         }
 
-        // 5️⃣ .dc Command (Disk Cleaner)
+        // 5️⃣ .dc
+        // ═══════════════════════════════════════════════════════
         else if (text.trim() === '.dc') {
             await sock.sendMessage(msg.key.remoteJid, { text: '🧹 RV Games සර්වර් එකේ තාවකාලික ෆයිල් ඉවත් කරමින් පවතී...' }, { quoted: msg });
             try {
@@ -1032,7 +1256,8 @@ async function startBot() {
             }
         }
 
-        // 6️⃣ .crash Command
+        // 6️⃣ .crash
+        // ═══════════════════════════════════════════════════════
         else if (text.trim() === '.crash') {
             await sock.sendMessage(msg.key.remoteJid, { text: '💀 *RV Games Bot Offline කරනු ලදී.*\n🚫 _සර්වර් එක තවදුරටත් ක්‍රියාත්මක නොවේ._' }, { quoted: msg });
             console.log("💀 Manual Crash triggered: Bot stopped.");
@@ -1042,7 +1267,8 @@ async function startBot() {
             }, 1000);
         }
 
-        // 7️⃣ .menu Command 
+        // 7️⃣ .menu
+        // ═══════════════════════════════════════════════════════
         else if (text.trim() === '.menu') {
             const menuText = 
                 `*👑𝚁𝚅 𝙶𝙰𝙼𝙴𝚂 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻 𝙱𝙾𝚃*👑\n\n` +
